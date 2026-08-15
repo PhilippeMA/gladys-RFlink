@@ -25,7 +25,7 @@ const SENSOR_ID = 'ext:rflink:oregon-temphygro:0710';
  * @param {object[]} [options.createdDevices] - Devices the user created in Gladys.
  * @returns {object} `{ pipeline, gladys, registry, sent, changes }`.
  */
-function setup({ config = {}, createdDevices = [] } = {}) {
+function setup({ config = {}, createdDevices = [], duplicateWindowMs } = {}) {
   const gladys = createFakeGladys(createdDevices);
   const registry = new DeviceRegistry({
     gladys,
@@ -44,10 +44,13 @@ function setup({ config = {}, createdDevices = [] } = {}) {
       changes.count += 1;
     },
     logger: silent,
+    ...(duplicateWindowMs === undefined ? {} : { duplicateWindowMs }),
   });
 
   return { pipeline, gladys, registry, sent, changes };
 }
+
+// `setRole` and the pulse tests need the registry, so the helper exposes it.
 
 const feed = (pipeline, line) => pipeline.handleFrame(parseFrame(line));
 
@@ -224,6 +227,138 @@ test('a command still works when only the Gladys params survived', async () => {
   await pipeline.handleSetValue({ external_id: SWITCH_ID }, { external_id: `${SWITCH_ID}:cmd` }, 1);
 
   assert.deepEqual(sent, ['10;NewKaku;000005;2;ON;']);
+});
+
+// --- Replaying the last reading onto a freshly added device ------------------
+
+test('adding a device replays what we already heard, timestamped when measured', async () => {
+  // The reported case: an Alecto V4 heard before the user adds it. Without the
+  // replay its features stay blank until the sensor next transmits.
+  const gladys = createFakeGladys();
+  const registry = new DeviceRegistry({ gladys, store: createFakeStore(), logger: silent });
+  const pipeline = createPipeline({
+    gladys,
+    registry,
+    getConfig: () => normalizeConfig(),
+    getGateway: () => null,
+    onDevicesChanged: () => {},
+    logger: silent,
+  });
+  const externalId = 'ext:rflink:alecto-v4:5b99';
+
+  await feed(pipeline, '20;26;Alecto V4;ID=5b99;TEMP=0128;HUM=37;');
+  assert.deepEqual(gladys.published, [], 'not created yet, nothing to publish to');
+
+  // The user adds it from the Discovery screen.
+  gladys.devices = [{ external_id: externalId }];
+  await pipeline.handleDeviceKnown({ external_id: externalId });
+
+  assert.deepEqual(
+    gladys.published.map(({ featureExternalId, state }) => ({ featureExternalId, state })),
+    [
+      { featureExternalId: `${externalId}:temperature`, state: 29.6 },
+      { featureExternalId: `${externalId}:humidity`, state: 37 },
+    ],
+  );
+});
+
+test('the replay carries no state for a device we never heard', async () => {
+  const { pipeline, gladys } = setup();
+  await pipeline.handleDeviceKnown({ external_id: 'ext:rflink:newkaku:000005-2' });
+  assert.deepEqual(gladys.published, []);
+});
+
+// --- Pulsed sensors ----------------------------------------------------------
+
+// A PIR is learned from its first transmission, and the role can only be set
+// once the device exists. The first frame therefore carries OFF: two identical
+// ON frames in a row would be swallowed by the radio-repeat deduplication and
+// the test would pass without ever exercising the reset.
+const learnThenType = async (pipeline, registry, resetAfter) => {
+  await feed(pipeline, '20;2D;NewKaku;ID=000005;SWITCH=2;CMD=OFF;');
+  registry.setRole(SWITCH_ID, 'motion', resetAfter);
+};
+
+test('a motion sensor returns to 0 on its own, since it never sends OFF', async () => {
+  const { pipeline, gladys, registry } = setup({ createdDevices: [{ external_id: SWITCH_ID }] });
+  await learnThenType(pipeline, registry, 0.05);
+  gladys.published.length = 0;
+
+  await feed(pipeline, '20;2E;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+  assert.deepEqual(gladys.published, [{ featureExternalId: `${SWITCH_ID}:cmd`, state: 1 }]);
+
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.deepEqual(gladys.published, [
+    { featureExternalId: `${SWITCH_ID}:cmd`, state: 1 },
+    { featureExternalId: `${SWITCH_ID}:cmd`, state: 0 },
+  ]);
+  pipeline.stop();
+});
+
+test('a new detection re-arms the delay instead of stacking timers', async () => {
+  // A real PIR re-arms after several seconds, well beyond the repeat window;
+  // the window is shrunk here so two genuine detections fit in a fast test.
+  const { pipeline, gladys, registry } = setup({
+    createdDevices: [{ external_id: SWITCH_ID }],
+    duplicateWindowMs: 10,
+  });
+  await learnThenType(pipeline, registry, 0.2);
+  gladys.published.length = 0;
+
+  await feed(pipeline, '20;2E;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  // Still moving: a fresh detection, far enough apart not to be a radio repeat.
+  await feed(pipeline, '20;2F;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+  await new Promise((resolve) => setTimeout(resolve, 120));
+
+  assert.equal(gladys.published.filter(({ state }) => state === 1).length, 2);
+  assert.equal(
+    gladys.published.filter(({ state }) => state === 0).length,
+    0,
+    'the first delay must be pushed back by the second detection, not fire under it',
+  );
+
+  // …and once the movement stops, the reset does happen.
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(gladys.published.filter(({ state }) => state === 0).length, 1);
+  pipeline.stop();
+});
+
+test('a switch is never reset behind the user back', async () => {
+  const { pipeline, gladys } = setup({ createdDevices: [{ external_id: SWITCH_ID }] });
+
+  await feed(pipeline, '20;2D;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.deepEqual(gladys.published, [{ featureExternalId: `${SWITCH_ID}:cmd`, state: 1 }]);
+  pipeline.stop();
+});
+
+test('a past detection is not replayed onto a device added later', async () => {
+  const { pipeline, gladys, registry } = setup();
+  await feed(pipeline, '20;2D;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+  registry.setRole(SWITCH_ID, 'motion');
+  gladys.devices = [{ external_id: SWITCH_ID }];
+
+  await pipeline.handleDeviceKnown({ external_id: SWITCH_ID });
+
+  // "Motion detected, ten minutes ago" is an event, not a state to restore.
+  assert.deepEqual(gladys.published, []);
+  pipeline.stop();
+});
+
+test('re-typing a device changes its Gladys category, not its feature key', async () => {
+  const { pipeline, registry } = setup({ createdDevices: [{ external_id: SWITCH_ID }] });
+  await feed(pipeline, '20;2D;NewKaku;ID=000005;SWITCH=2;CMD=ON;');
+
+  const before = registry.buildDiscoveredDevices()[0].features[0];
+  registry.setRole(SWITCH_ID, 'motion');
+  const after = registry.buildDiscoveredDevices()[0].features[0];
+
+  assert.equal(before.category, 'switch');
+  assert.equal(after.category, 'motion-sensor');
+  assert.equal(after.read_only, true);
+  assert.equal(after.external_id, before.external_id, 'the history must survive the re-typing');
 });
 
 test('commandFor maps the controllable features and refuses the rest', () => {

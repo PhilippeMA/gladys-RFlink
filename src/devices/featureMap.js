@@ -65,6 +65,20 @@ const hexTenth = (raw) => {
   return value === null ? null : Number((value / 10).toFixed(1));
 };
 
+// Fields RFLink reports that deliberately get NO feature.
+//
+// Both are values the sensor DERIVES from another field it already sends, on a
+// scale no Gladys category carries. Mapping them to the `unknown` category —
+// which is what a first version did — produces a feature with no name and no
+// icon: a blank line in the user's device, next to the humidity it is computed
+// from. A redundant reading is not worth a feature nobody can read.
+//
+//   HSTATUS   0-3, bucketed from HUM  (normal / comfortable / dry / wet)
+//   BFORECAST 0-4, trend of BARO      (sunny / partly cloudy / cloudy / rain)
+//
+// They can come back the day Gladys has somewhere sensible to put them.
+export const IGNORED_FIELDS = ['HSTATUS', 'BFORECAST'];
+
 /**
  * The translation table, keyed by the RFLink field label.
  *
@@ -131,28 +145,6 @@ export const RFLINK_FIELDS = {
     max: 1200,
     decode: parseHex,
   },
-  HSTATUS: {
-    key: 'humidity-status',
-    name: 'Humidity status',
-    // 0 = normal, 1 = comfortable, 2 = dry, 3 = wet. No Gladys category covers
-    // that scale, so it stays a raw integer the user can read in a chart.
-    category: CATEGORIES.UNKNOWN,
-    type: TYPES.SENSOR.INTEGER,
-    min: 0,
-    max: 3,
-    decode: parseDecimal,
-  },
-  BFORECAST: {
-    key: 'forecast',
-    name: 'Forecast',
-    // 0 = unknown, 1 = sunny, 2 = partly cloudy, 3 = cloudy, 4 = rain.
-    category: CATEGORIES.UNKNOWN,
-    type: TYPES.SENSOR.INTEGER,
-    min: 0,
-    max: 4,
-    decode: parseDecimal,
-  },
-
   // --- Weather station -------------------------------------------------------
   RAIN: {
     key: 'rain-total',

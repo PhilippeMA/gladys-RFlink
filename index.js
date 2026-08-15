@@ -76,6 +76,14 @@ function schedulePublishDevices() {
 
 gladys.onSetValue((device, feature, value) => pipeline.handleSetValue(device, feature, value));
 
+// --- A device just appeared (or its features changed) ------------------------
+// An RF device is heard long before the user adds it, so its last reading is
+// already in hand: hand it over immediately instead of leaving the freshly
+// added device blank until the next transmission.
+
+gladys.onDeviceCreated((device) => pipeline.handleDeviceKnown(device));
+gladys.onDeviceUpdated((device) => pipeline.handleDeviceKnown(device));
+
 // --- Manifest actions --------------------------------------------------------
 
 const actions = createActions({ gladys, getGateway: () => gateway, registry, publishDevices });
@@ -196,6 +204,7 @@ gladys.on('connected', async () => {
 gladys.on('disconnected', () => {
   // Nothing to publish to any more: stop transmitting and stop listening.
   stopGateway();
+  pipeline.stop();
 });
 
 // --- Graceful shutdown -------------------------------------------------------
@@ -203,6 +212,7 @@ gladys.on('disconnected', () => {
 gladys.handleShutdown(async (signal) => {
   logger.info(`Received ${signal} -> graceful shutdown`);
   stopGateway();
+  pipeline.stop();
   // Persist the devices learned in the last seconds before the volume goes.
   await store.flush();
 });

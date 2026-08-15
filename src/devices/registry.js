@@ -17,6 +17,7 @@
 import { createLogger } from '@gladysassistant/integration-sdk';
 
 import { fieldDescriptor, normalizeMeasurements, supportedLabels } from './featureMap.js';
+import { applyRole, DEFAULT_ROLE, isKnownRole } from './roles.js';
 
 const defaultLogger = createLogger({ name: 'registry' });
 
@@ -115,6 +116,10 @@ export class DeviceRegistry {
         id: entry.id,
         unit: entry.unit ?? null,
         labels: Array.isArray(entry.labels) ? entry.labels : [],
+        // A role the code no longer knows (downgrade, typo in a hand-edited
+        // file) falls back to the default rather than breaking the device.
+        role: isKnownRole(entry.role) ? entry.role : DEFAULT_ROLE,
+        resetAfter: typeof entry.resetAfter === 'number' ? entry.resetAfter : null,
         firstSeen: entry.firstSeen ?? new Date().toISOString(),
         lastSeen: entry.lastSeen ?? null,
       });
@@ -174,7 +179,18 @@ export class DeviceRegistry {
         return { entry: null, values, isNew: false, changed: false };
       }
       const now = new Date().toISOString();
-      const entry = { ...target, labels, firstSeen: now, lastSeen: now };
+      // Born as what RFLink reported. An ambiguous encoder chip (EV1527 and
+      // friends) is re-typed afterwards through the `set_device_role` action:
+      // the protocol carries no device class, so nothing better can be
+      // inferred here.
+      const entry = {
+        ...target,
+        labels,
+        role: DEFAULT_ROLE,
+        resetAfter: null,
+        firstSeen: now,
+        lastSeen: now,
+      };
       this.entries.set(key, entry);
       this.logger.info(`New RFLink device: ${defaultName(target)} [${labels.join(', ')}]`);
       this.save();
@@ -242,7 +258,54 @@ export class DeviceRegistry {
     }
     const unit = read(PARAMS.UNIT);
     this.logger.info(`Recovered ${protocol} ${id} from its Gladys params (cache was empty)`);
-    return { protocol, id, unit: unit === undefined || unit === '' ? null : unit, labels: [] };
+    return {
+      protocol,
+      id,
+      unit: unit === undefined || unit === '' ? null : unit,
+      labels: [],
+      role: DEFAULT_ROLE,
+      resetAfter: null,
+    };
+  }
+
+  /**
+   * Declare what a switch-like device REALLY is.
+   *
+   * RFLink cannot tell a motion detector from a wall plug when both ride on an
+   * EV1527 chip — the frame is identical, the information is not on the air.
+   * This is how the user supplies it, once per device.
+   * @param {string} externalId - Gladys device external_id.
+   * @param {string} role - A role key from `roles.js`.
+   * @param {number|null} [resetAfter] - Seconds before the state resets, 0 to disable, null for the role default.
+   * @returns {object|null} The updated entry, or null when the device is unknown.
+   */
+  setRole(externalId, role, resetAfter = null) {
+    for (const entry of this.entries.values()) {
+      if (externalIdsFor(this.gladys, entry).device !== externalId) {
+        continue;
+      }
+      entry.role = isKnownRole(role) ? role : DEFAULT_ROLE;
+      entry.resetAfter = typeof resetAfter === 'number' ? resetAfter : null;
+      this.logger.info(`${defaultName(entry)} is now a "${entry.role}"`);
+      this.save();
+      return entry;
+    }
+    return null;
+  }
+
+  /**
+   * The Gladys feature descriptor of one field ON THIS DEVICE: the protocol
+   * mapping, then the user's role on top.
+   *
+   * Discovery and state publishing both go through here, so a device can never
+   * be built with one category and fed under another.
+   * @param {string} label - RFLink field label.
+   * @param {object} entry - The registry entry of the device.
+   * @returns {object|undefined} The descriptor, undefined for an unsupported label.
+   */
+  describe(label, entry) {
+    const descriptor = fieldDescriptor(label, entry.labels);
+    return descriptor === undefined ? undefined : applyRole(descriptor, label, entry.role);
   }
 
   /**
@@ -278,7 +341,7 @@ export class DeviceRegistry {
       params,
       features: entry.labels
         .map((label) => {
-          const descriptor = fieldDescriptor(label, entry.labels);
+          const descriptor = this.describe(label, entry);
           if (!descriptor) {
             return null;
           }
@@ -312,7 +375,7 @@ export class DeviceRegistry {
     const ids = externalIdsFor(this.gladys, entry);
     const states = [];
     for (const [label, raw] of Object.entries(values)) {
-      const descriptor = fieldDescriptor(label, entry.labels);
+      const descriptor = this.describe(label, entry);
       if (!descriptor) {
         continue;
       }

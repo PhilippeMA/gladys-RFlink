@@ -18,6 +18,7 @@ import {
   GATEWAY_COMMANDS,
 } from './rflink/protocol.js';
 import { defaultName } from './devices/registry.js';
+import { isKnownRole, pulseSecondsFor, roleKeys } from './devices/roles.js';
 
 const logger = createLogger({ name: 'actions' });
 
@@ -136,6 +137,58 @@ export function createActions({ gladys, getGateway, registry, publishDevices }) 
       return {
         en: `${defaultName(target)} switched on then off.`,
         fr: `${defaultName(target)} allumé puis éteint.`,
+      };
+    },
+
+    /**
+     * Declare what a switch-like device really is.
+     *
+     * EV1527, PT2262 and the other bare encoder chips transmit an address and
+     * four bits of data — no device class. A motion detector, a door contact
+     * and a wall plug therefore produce the SAME frame, and RFLink reports all
+     * three as a switch. This is where the user supplies what the radio does
+     * not carry.
+     */
+    async set_device_role(fields) {
+      const role = String(fields.role ?? '');
+      if (!isKnownRole(role)) {
+        throw new Error(
+          `Unknown device type "${role}". Expected one of: ${roleKeys().join(', ')}.`,
+        );
+      }
+
+      const target = registry.resolve(fields.device, gladys.devices ?? []);
+      if (!target) {
+        throw new Error('Unknown device: it is not in the RFLink registry any more.');
+      }
+      if (!target.labels.includes('CMD')) {
+        return {
+          en: `${defaultName(target)} reports measurements, not an on/off signal: it has no type to change.`,
+          fr: `${defaultName(target)} rapporte des mesures, pas un signal marche/arrêt : il n'y a pas de type à changer.`,
+        };
+      }
+
+      const requested = Number(fields.reset_after);
+      const resetAfter = Number.isFinite(requested) && requested >= 0 ? requested : null;
+      const updated = registry.setRole(fields.device, role, resetAfter);
+      if (!updated) {
+        throw new Error('This device is not in the RFLink registry: nothing to re-type.');
+      }
+      logger.info(`Action set_device_role -> ${defaultName(updated)} = ${role}`);
+
+      // Changing a category is a STRUCTURE change: Gladys will not rewrite a
+      // device behind the user's back, it offers an "Update" button instead.
+      // Saying so turns a confusing no-op into an expected extra click.
+      await publishDevices();
+
+      const seconds = pulseSecondsFor(updated);
+      const reset = {
+        en: seconds === null ? 'no automatic reset' : `resets to off after ${seconds}s`,
+        fr: seconds === null ? 'pas de remise à zéro' : `remise à zéro après ${seconds} s`,
+      };
+      return {
+        en: `${defaultName(updated)} is now a "${role}" (${reset.en}). Open the Discovery tab and press Update on this device to apply it.`,
+        fr: `${defaultName(updated)} est maintenant de type « ${role} » (${reset.fr}). Ouvrez l'onglet Découverte et cliquez sur Mettre à jour pour l'appliquer.`,
       };
     },
 

@@ -35,6 +35,7 @@ RF device ──433MHz──▶ RFLink gateway ──TCP──▶ gateway.js ─
 | `src/rflink/gateway.js`     | The TCP link: framing, reconnection, paced writes, keepalive, `request()` |
 | `src/devices/featureMap.js` | RFLink measurement → Gladys category / type / unit / decoder              |
 | `src/devices/registry.js`   | The devices heard on the air: identity, features, discovery payload       |
+| `src/devices/roles.js`      | What a switch-like frame actually is, when the chip does not say          |
 | `src/pipeline.js`           | Frames → published states, Gladys commands → RFLink command lines         |
 | `src/store.js`              | Persistence of the learned devices in `/data`                             |
 | `src/actions.js`            | The buttons of the Configuration screen                                   |
@@ -67,6 +68,16 @@ ESP8266/ESP32 (native TCP server) and a USB RFLink bridged with `ser2net`.
   as device params, so a wiped `/data` volume does not break your commands.
 - **Discovery has a ceiling and an ignore list.** A 433 MHz receiver hears the
   whole neighbourhood.
+- **Ambiguous chips are typed by the user, never guessed.** EV1527 and PT2262
+  carry an address and four bits — a PIR, a door contact and a wall plug send
+  the identical frame. A device role (`roles.js`) overrides the category, keeps
+  the feature key so the history survives, and brings the automatic reset a
+  detector needs: a PIR that never sends OFF would otherwise stay "on" for
+  ever, and no scene could trigger again.
+- **A newly added device is never blank.** The last reading heard before the
+  user added it is replayed on `onDeviceCreated`, timestamped when it was
+  measured — except for pulsed sensors, where a past detection is an event, not
+  a state to restore.
 
 ## Adding support for a new measurement
 

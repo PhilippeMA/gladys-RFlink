@@ -137,6 +137,80 @@
       ]
     },
     {
+      "key": "set_device_role",
+      "label": { "en": "Set a device type", "fr": "Définir le type d'un appareil" },
+      "description": {
+        "en": "Chips like EV1527 or PT2262 send the same frame whether they sit in a motion detector, a door contact or a wall plug, so RFLink reports them all as a switch. Tell Gladys what yours really is.",
+        "fr": "Les puces type EV1527 ou PT2262 émettent la même trame qu'elles soient dans un détecteur de mouvement, un contact de porte ou une prise, donc RFLink les rapporte toutes comme un interrupteur. Indiquez à Gladys ce qu'est vraiment le vôtre."
+      },
+      "timeout_seconds": 20,
+      "fields": [
+        {
+          "key": "device",
+          "type": "select",
+          "source": "devices",
+          "label": { "en": "Device", "fr": "Appareil" },
+          "required": true
+        },
+        {
+          "key": "role",
+          "type": "select",
+          "label": { "en": "This device is a", "fr": "Cet appareil est un" },
+          "required": true,
+          "options": [
+            {
+              "value": "switch",
+              "label": { "en": "Switch / plug", "fr": "Interrupteur / prise" }
+            },
+            { "value": "light", "label": { "en": "Light", "fr": "Lampe" } },
+            { "value": "siren", "label": { "en": "Siren", "fr": "Sirène" } },
+            {
+              "value": "motion",
+              "label": { "en": "Motion detector", "fr": "Détecteur de mouvement" }
+            },
+            {
+              "value": "presence",
+              "label": { "en": "Presence sensor", "fr": "Capteur de présence" }
+            },
+            {
+              "value": "opening",
+              "label": { "en": "Door / window contact", "fr": "Contact de porte / fenêtre" }
+            },
+            { "value": "smoke", "label": { "en": "Smoke detector", "fr": "Détecteur de fumée" } },
+            {
+              "value": "leak",
+              "label": { "en": "Water leak probe", "fr": "Sonde de fuite d'eau" }
+            },
+            {
+              "value": "vibration",
+              "label": { "en": "Vibration sensor", "fr": "Capteur de vibration" }
+            },
+            { "value": "doorbell", "label": { "en": "Doorbell", "fr": "Sonnette" } },
+            {
+              "value": "button",
+              "label": { "en": "Button / remote", "fr": "Bouton / télécommande" }
+            },
+            {
+              "value": "input",
+              "label": { "en": "Other sensor (read-only)", "fr": "Autre capteur (lecture seule)" }
+            }
+          ]
+        },
+        {
+          "key": "reset_after",
+          "type": "number",
+          "label": { "en": "Reset to off after (s)", "fr": "Remise à zéro après (s)" },
+          "description": {
+            "en": "A motion detector reports a detection but often never reports the end of it. Leave empty for the default of the type (60s for motion, 2s for a doorbell), or 0 to keep the state until something else changes it.",
+            "fr": "Un détecteur de mouvement signale une détection mais rarement sa fin. Laissez vide pour la valeur par défaut du type (60 s pour un mouvement, 2 s pour une sonnette), ou 0 pour conserver l'état jusqu'à ce qu'autre chose le change."
+          },
+          "required": false,
+          "min": 0,
+          "max": 3600
+        }
+      ]
+    },
+    {
       "key": "send_command",
       "label": { "en": "Send a raw command", "fr": "Envoyer une commande brute" },
       "description": {

@@ -95,6 +95,60 @@ L'action **Oublier les appareils non ajoutés** vide l'onglet Découverte de tou
 ce que vous n'avez pas créé, pour repartir sur une base propre. Les appareils
 déjà ajoutés ne sont jamais touchés.
 
+Un appareil que vous ajoutez affiche **immédiatement sa dernière mesure
+connue** : l'intégration l'avait entendu avant que vous l'ajoutiez et vous la
+transmet, horodatée au moment où elle a réellement été mesurée. Pas d'attente
+de la prochaine émission.
+
+## Quand RFLink ne peut pas savoir ce qu'est votre appareil
+
+Les puces **EV1527**, **PT2262** ou **HS1527** sont de simples encodeurs radio :
+elles émettent une adresse et quatre bits de données, rien de plus. La même
+puce équipe des détecteurs de mouvement, des contacts de porte, des détecteurs
+de fumée, des sondes de fuite, des boutons de sonnette et des prises — et tous
+produisent exactement la même trame :
+
+```
+20;2D;EV1527;ID=07a410;SWITCH=01;CMD=ON;
+```
+
+Aucun logiciel ne peut les distinguer, car l'information n'est pas émise.
+RFLink les rapporte donc tous comme des interrupteurs, et votre détecteur de
+mouvement arrive en interrupteur. L'action **Définir le type d'un appareil**
+sert à dire ce qu'il est vraiment :
+
+1. Ajoutez l'appareil depuis l'onglet Découverte (il apparaît en interrupteur).
+2. Lancez **Définir le type d'un appareil** : choisissez l'appareil, puis son
+   type réel — détecteur de mouvement, contact de porte, détecteur de fumée,
+   sonde de fuite, capteur de vibration, sonnette, bouton, sirène, lampe, ou
+   capteur générique en lecture seule.
+3. Retournez dans l'onglet **Découverte** et cliquez sur **Mettre à jour** sur
+   cet appareil.
+
+Cette dernière étape, c'est Gladys qui refuse de réécrire un de vos appareils
+sans vous demander : changer un type change la structure de l'appareil. Votre
+historique est conservé — la fonctionnalité garde son identité au passage.
+
+### Détecteurs de mouvement : le délai de remise à zéro
+
+Un PIR signale une détection mais, sur la plupart du matériel bon marché, **ne
+signale jamais sa fin**. Sans rien faire, la fonctionnalité resterait « active »
+pour toujours, plus aucun changement ne se produirait, et aucun scénario ne
+pourrait se redéclencher. Une détection est donc automatiquement remise à zéro
+après un délai, réglable par appareil dans la même action :
+
+| Type                                     | Remise à zéro par défaut |
+| ---------------------------------------- | ------------------------ |
+| Mouvement, présence, fumée, fuite        | 60 s                     |
+| Vibration                                | 30 s                     |
+| Sonnette, bouton                         | 2 s                      |
+| Contact de porte / fenêtre, interrupteur | jamais                   |
+
+Un contact de porte n'est jamais remis à zéro : il émet à l'ouverture **et** à
+la fermeture, donc le réinitialiser effacerait une porte réellement restée
+ouverte. Saisissez `0` pour désactiver la remise à zéro et la piloter vous-même
+depuis un scénario.
+
 ## Piloter un appareil
 
 Tout appareil que RFLink rapporte avec une commande (`CMD=ON` / `CMD=OFF`)
@@ -125,13 +179,14 @@ tout le reste.
 
 ## Actions
 
-| Action                                | Effet                                                                |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| **Tester la passerelle**              | Envoie `10;PING;` et attend le `PONG`.                               |
-| **Lire la version du firmware**       | Envoie `10;VERSION;` et affiche firmware, révision et build.         |
-| **Identifier un appareil**            | Allume l'appareil choisi, puis l'éteint deux secondes plus tard.     |
-| **Envoyer une commande brute**        | Transmet une ligne RFLink `10;...;` (appairage, test d'une adresse). |
-| **Oublier les appareils non ajoutés** | Vide l'onglet Découverte en conservant tous vos appareils créés.     |
+| Action                                | Effet                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| **Tester la passerelle**              | Envoie `10;PING;` et attend le `PONG`.                                   |
+| **Lire la version du firmware**       | Envoie `10;VERSION;` et affiche firmware, révision et build.             |
+| **Définir le type d'un appareil**     | Déclare ce qu'est vraiment un appareil type EV1527, et son délai de RAZ. |
+| **Identifier un appareil**            | Allume l'appareil choisi, puis l'éteint deux secondes plus tard.         |
+| **Envoyer une commande brute**        | Transmet une ligne RFLink `10;...;` (appairage, test d'une adresse).     |
+| **Oublier les appareils non ajoutés** | Vide l'onglet Découverte en conservant tous vos appareils créés.         |
 
 ## Dépannage
 
@@ -160,6 +215,14 @@ comportement du capteur, et tous les contrôleurs 433 MHz le voient ainsi.
 **Une température est aberrante.** Signalez-la avec la trame brute (extraite
 des logs) dans une issue : le décodage se fait champ par champ, et un protocole
 inhabituel peut nécessiter un traitement dédié.
+
+**Deux mesures émises par mon capteur n'apparaissent pas.** `HSTATUS` (un
+niveau de confort d'humidité) et `BFORECAST` (une tendance barométrique
+sommaire) ne sont volontairement pas exposés : ce sont deux valeurs que le
+capteur déduit d'une mesure qu'il envoie déjà, sur une échelle qu'aucune
+catégorie Gladys ne porte. Elles apparaîtraient comme une ligne sans nom ni
+icône, juste à côté de l'humidité dont elles sont calculées. Demandez-les dans
+une issue si elles vous sont utiles.
 
 Pour plus de détail, positionnez `LOG_LEVEL=debug` sur le conteneur de
 l'intégration : chaque trame, chaque commande et chaque reconnexion est

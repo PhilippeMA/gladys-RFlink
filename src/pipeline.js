@@ -16,8 +16,9 @@
 import { createLogger } from '@gladysassistant/integration-sdk';
 
 import { buildProtocolFilter } from './config.js';
-import { controllableLabel, percentToLevel } from './devices/featureMap.js';
+import { controllableLabel, percentToLevel, RFLINK_FIELDS } from './devices/featureMap.js';
 import { externalIdsFor } from './devices/registry.js';
+import { pulseSecondsFor } from './devices/roles.js';
 import { buildDeviceCommand, FRAME_KINDS } from './rflink/protocol.js';
 
 const defaultLogger = createLogger({ name: 'pipeline' });
@@ -26,6 +27,10 @@ const defaultLogger = createLogger({ name: 'pipeline' });
 // receiver catches at least one. Publishing each repeat would triple the
 // history for nothing.
 export const DUPLICATE_WINDOW_MS = 1_000;
+
+// A reading older than this is not replayed when the device is created: a
+// temperature from last week says nothing about the room now.
+export const REPLAY_MAX_AGE_MS = 6 * 60 * 60 * 1_000;
 
 /**
  * Translate a Gladys command into the RFLink command word.
@@ -58,7 +63,8 @@ export function commandFor(featureKey, value) {
  * @param {Function} deps.getGateway - `() => RflinkGateway | null`.
  * @param {Function} deps.onDevicesChanged - Called when the discovery payload is stale.
  * @param {object} [deps.logger] - Logger, defaults to the SDK named logger.
- * @returns {object} `{ handleFrame, handleSetValue }`.
+ * @param {number} [deps.duplicateWindowMs] - Window in which an identical frame is a radio repeat.
+ * @returns {object} `{ handleFrame, handleSetValue, handleDeviceKnown, stop }`.
  */
 export function createPipeline({
   gladys,
@@ -67,8 +73,18 @@ export function createPipeline({
   getGateway,
   onDevicesChanged,
   logger = defaultLogger,
+  duplicateWindowMs = DUPLICATE_WINDOW_MS,
 }) {
   const lastFrames = new Map();
+
+  // Last reading heard per device, INCLUDING for devices the user has not
+  // created yet — that is the whole point: an RF device is heard long before
+  // it is added, and without this its features would sit empty until it next
+  // transmits (minutes for a weather sensor, never for a remote).
+  const lastStates = new Map();
+
+  // Pending "back to 0" of the pulsed sensors, keyed by feature external id.
+  const resetTimers = new Map();
 
   // The ignore list is a comma-separated string in the configuration; rebuild
   // the matcher only when that string actually changes, not on every frame.
@@ -101,7 +117,7 @@ export function createPipeline({
     return (
       previous !== undefined &&
       previous.signature === signature &&
-      now - previous.at < DUPLICATE_WINDOW_MS
+      now - previous.at < duplicateWindowMs
     );
   }
 
@@ -115,6 +131,59 @@ export function createPipeline({
     // The SDK keeps `gladys.devices` in sync through the device-created /
     // updated / deleted events, so this stays accurate without polling.
     return (gladys.devices ?? []).some((device) => device.external_id === externalId);
+  }
+
+  /**
+   * Arm the automatic return to 0 of a pulsed sensor.
+   *
+   * A PIR sends ON on detection and, on most cheap hardware, never sends OFF.
+   * Left alone the feature stays at 1 for ever: no further transition, so no
+   * scene can ever re-trigger. Each new detection re-arms the delay rather
+   * than stacking a second timer.
+   * @param {object} entry - The registry entry of the device.
+   * @param {object[]} states - The states just published.
+   */
+  function armPulseReset(entry, states) {
+    const seconds = pulseSecondsFor(entry);
+    if (seconds === null) {
+      return;
+    }
+    const featureId = externalIdsFor(gladys, entry).feature(RFLINK_FIELDS.CMD.key);
+    const detection = states.find(
+      (state) => state.device_feature_external_id === featureId && state.state === 1,
+    );
+    if (!detection) {
+      return;
+    }
+
+    clearTimeout(resetTimers.get(featureId));
+    const timer = setTimeout(() => {
+      resetTimers.delete(featureId);
+      gladys
+        .publishState(featureId, 0)
+        .catch((err) => logger.error(`Pulse reset failed for ${featureId}`, err));
+    }, seconds * 1_000);
+    timer.unref?.();
+    resetTimers.set(featureId, timer);
+  }
+
+  /**
+   * Remember the reading, and publish it when the device exists in Gladys.
+   * @param {object} entry - The registry entry of the device.
+   * @param {object[]} states - The states built from the frame.
+   */
+  async function publishStates(entry, states) {
+    if (states.length === 0) {
+      return;
+    }
+    lastStates.set(externalIdsFor(gladys, entry).device, { states, at: Date.now() });
+    if (!isCreated(entry)) {
+      // Publishing for a device the user has not added would be a rejected
+      // HTTP call on every single frame.
+      return;
+    }
+    await gladys.publishStates(states);
+    armPulseReset(entry, states);
   }
 
   return {
@@ -153,15 +222,55 @@ export function createPipeline({
         onDevicesChanged();
       }
 
-      // States are only worth publishing for devices the user actually
-      // created: everything else would be a rejected HTTP call per frame.
-      if (!isCreated(entry)) {
+      await publishStates(entry, registry.buildStates(entry, values));
+    },
+
+    /**
+     * Replay the last known reading onto a device that just appeared, or whose
+     * feature list the user just updated.
+     *
+     * Without this, adding a sensor from the Discovery screen gives a device
+     * whose features are BLANK until it next transmits — up to several minutes
+     * on a weather sensor, and indefinitely on a remote nobody presses. We
+     * already heard the value: it only has to be handed over, timestamped when
+     * it was actually measured rather than passed off as current.
+     * @param {object} device - The Gladys device that was created or updated.
+     */
+    async handleDeviceKnown(device) {
+      const remembered = lastStates.get(device.external_id);
+      if (!remembered) {
         return;
       }
-      const states = registry.buildStates(entry, values);
-      if (states.length > 0) {
-        await gladys.publishStates(states);
+      const age = Date.now() - remembered.at;
+      if (age > REPLAY_MAX_AGE_MS) {
+        logger.debug(`Not replaying a ${Math.round(age / 60_000)} min old reading`);
+        return;
       }
+
+      const entry = registry.resolve(device.external_id, gladys.devices ?? []);
+      // A pulsed sensor reports an EVENT, not a state: replaying "motion
+      // detected" from ten minutes ago would light up a detector that has been
+      // quiet since.
+      const isPulsed = entry !== null && pulseSecondsFor(entry) !== null;
+      const cmdFeatureId =
+        entry === null ? null : externalIdsFor(gladys, entry).feature(RFLINK_FIELDS.CMD.key);
+      const states = remembered.states
+        .filter((state) => !(isPulsed && state.device_feature_external_id === cmdFeatureId))
+        .map((state) => ({ ...state, created_at: new Date(remembered.at).toISOString() }));
+
+      if (states.length === 0) {
+        return;
+      }
+      logger.info(`Replaying the last known reading of ${device.external_id}`);
+      await gladys.publishStates(states);
+    },
+
+    /** Drop the pending pulse resets (disconnection, shutdown). */
+    stop() {
+      for (const timer of resetTimers.values()) {
+        clearTimeout(timer);
+      }
+      resetTimers.clear();
     },
 
     /**

@@ -87,6 +87,54 @@ The **Forget undiscovered devices** action empties the Discovery tab of
 everything you have not created, so you can start the learning over in a clean
 state. Devices you already added are never touched.
 
+A device you add shows its **last known reading straight away** — the
+integration heard it before you added it and hands the value over, timestamped
+when it was actually measured. No waiting for the next transmission.
+
+## When RFLink cannot tell what your device is
+
+Chips like **EV1527**, **PT2262** and **HS1527** are bare radio encoders: they
+transmit an address and four bits of data, and nothing more. The same chip sits
+in motion detectors, door contacts, smoke alarms, leak probes, doorbell buttons
+and wall plugs — and all of them produce the exact same frame:
+
+```
+20;2D;EV1527;ID=07a410;SWITCH=01;CMD=ON;
+```
+
+No software can tell them apart, because the information is not transmitted.
+RFLink reports them all as a switch, so your motion detector arrives as a
+switch. Use the **Set a device type** action to say what it really is:
+
+1. Add the device from the Discovery tab (it appears as a switch).
+2. Run **Set a device type**: pick the device, then its real type — motion
+   detector, door contact, smoke detector, leak probe, vibration sensor,
+   doorbell, button, siren, light, or a generic read-only sensor.
+3. Go back to the **Discovery** tab and press **Update** on that device.
+
+That last step is Gladys refusing to rewrite one of your devices behind your
+back: changing a type changes the device structure, so it asks you to confirm.
+Your history is preserved — the feature keeps its identity through the change.
+
+### Motion detectors: the reset delay
+
+A PIR reports a detection but, on most cheap hardware, **never reports the end
+of it**. Left alone the feature would stay "on" for ever, no further change
+would happen, and no scene could ever trigger again. So a detection is
+automatically reset to off after a delay, which you can set per device in the
+same action:
+
+| Type                                 | Default reset |
+| ------------------------------------ | ------------- |
+| Motion, presence, smoke, leak        | 60 s          |
+| Vibration                            | 30 s          |
+| Doorbell, button                     | 2 s           |
+| Door / window contact, switch, light | never         |
+
+A door contact is never reset: it transmits on opening **and** on closing, so
+resetting it would erase a door that is genuinely still open. Enter `0` to
+disable the reset and drive it yourself from a scene.
+
 ## Controlling a device
 
 Any device RFLink reports with a command (`CMD=ON` / `CMD=OFF`) gets an on/off
@@ -116,13 +164,14 @@ anything else.
 
 ## Actions
 
-| Action                          | What it does                                                       |
-| ------------------------------- | ------------------------------------------------------------------ |
-| **Test the gateway**            | Sends `10;PING;` and waits for the `PONG`.                         |
-| **Read the firmware version**   | Sends `10;VERSION;` and shows firmware, revision and build.        |
-| **Identify a device**           | Switches the chosen device on, then off, two seconds later.        |
-| **Send a raw command**          | Transmits one RFLink `10;...;` line (pairing, testing an address). |
-| **Forget undiscovered devices** | Empties the Discovery tab, keeping every device you created.       |
+| Action                          | What it does                                                         |
+| ------------------------------- | -------------------------------------------------------------------- |
+| **Test the gateway**            | Sends `10;PING;` and waits for the `PONG`.                           |
+| **Read the firmware version**   | Sends `10;VERSION;` and shows firmware, revision and build.          |
+| **Set a device type**           | Declares what an EV1527-style device really is, and its reset delay. |
+| **Identify a device**           | Switches the chosen device on, then off, two seconds later.          |
+| **Send a raw command**          | Transmits one RFLink `10;...;` line (pairing, testing an address).   |
+| **Forget undiscovered devices** | Empties the Discovery tab, keeping every device you created.         |
 
 ## Troubleshooting
 
@@ -149,6 +198,13 @@ controller sees it the same way.
 **A temperature looks absurd.** Report it with the raw frame (from the logs)
 in an issue: decoding is per-field, and an unusual protocol may need its own
 handling.
+
+**Two readings my sensor sends never show up.** `HSTATUS` (a humidity comfort
+bucket) and `BFORECAST` (a crude barometric trend) are deliberately not
+exposed: both are values the sensor derives from a measurement it already
+sends, on a scale no Gladys category carries. They would appear as a nameless,
+iconless line next to the humidity they are computed from. Ask for them in an
+issue if you have a use for them.
 
 For more detail, set `LOG_LEVEL=debug` on the integration container: every
 frame, every command and every reconnection is logged.

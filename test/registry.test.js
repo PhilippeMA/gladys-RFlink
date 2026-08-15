@@ -234,6 +234,38 @@ test('resolve falls back to the device params when the /data cache was lost', ()
   assert.equal(registry.resolve('ext:other:thing', [{ external_id: 'ext:other:thing' }]), null);
 });
 
+test('a role is remembered across a restart', async () => {
+  const store = createFakeStore();
+  const { registry } = createRegistry({ store });
+  learn(registry, '20;2D;EV1527;ID=07a410;SWITCH=01;CMD=ON;');
+  registry.setRole('ext:rflink:ev1527:07a410-01', 'motion', 30);
+
+  const { registry: reloaded } = createRegistry({ store });
+  await reloaded.load();
+
+  assert.equal(reloaded.list()[0].role, 'motion');
+  assert.equal(reloaded.list()[0].resetAfter, 30);
+});
+
+test('a role the code no longer knows falls back instead of breaking the device', async () => {
+  const store = createFakeStore({
+    version: 1,
+    devices: [
+      { protocol: 'EV1527', id: '07a410', unit: '01', labels: ['CMD'], role: 'teleporter' },
+    ],
+  });
+  const { registry } = createRegistry({ store });
+  await registry.load();
+
+  assert.equal(registry.list()[0].role, 'switch');
+  assert.equal(registry.buildDiscoveredDevices()[0].features[0].category, CATEGORIES.SWITCH);
+});
+
+test('setRole refuses a device that is not in the registry', () => {
+  const { registry } = createRegistry();
+  assert.equal(registry.setRole('ext:rflink:nope:1', 'motion'), null);
+});
+
 test('forgetting the undiscovered devices keeps the created ones', () => {
   const { registry } = createRegistry();
   learn(registry, '20;2D;NewKaku;ID=000005;SWITCH=2;CMD=ON;');

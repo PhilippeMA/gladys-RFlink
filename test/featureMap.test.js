@@ -8,6 +8,7 @@ import {
 import {
   controllableLabel,
   fieldDescriptor,
+  IGNORED_FIELDS,
   levelToPercent,
   normalizeMeasurements,
   percentToLevel,
@@ -98,6 +99,24 @@ test('unfolds the dim level RFLink nests inside CMD', () => {
 test('only the labels the integration knows about become features', () => {
   assert.deepEqual(supportedLabels({ TEMP: '00b4', HUM: '44', RFDEBUG: 'ON' }), ['TEMP', 'HUM']);
   assert.deepEqual(supportedLabels({}), []);
+});
+
+test('the derived fields get no feature at all', () => {
+  // HSTATUS is bucketed from HUM and BFORECAST from BARO. Mapped to the
+  // `unknown` category they rendered as a nameless, iconless line sitting next
+  // to the humidity they are computed from — a blank feature nobody can read.
+  for (const label of IGNORED_FIELDS) {
+    assert.equal(RFLINK_FIELDS[label], undefined, `${label} must not be mapped`);
+    assert.equal(fieldDescriptor(label, [label]), undefined);
+  }
+  assert.deepEqual(supportedLabels({ HUM: '37', HSTATUS: '2', BFORECAST: '3' }), ['HUM']);
+});
+
+test('no feature is left in the unknown category', () => {
+  // A feature Gladys cannot name is a feature the user sees blank.
+  for (const [label, descriptor] of Object.entries(RFLINK_FIELDS)) {
+    assert.notEqual(descriptor.category, CATEGORIES.UNKNOWN, `${label} has no real category`);
+  }
 });
 
 test('a Gladys command maps back to exactly one RFLink label', () => {
