@@ -9,8 +9,10 @@ import {
   applyRole,
   DEFAULT_ROLE,
   DEVICE_ROLES,
+  encodeRoleCommand,
   isKnownRole,
   pulseSecondsFor,
+  roleFromFrame,
   roleKeys,
 } from '../src/devices/roles.js';
 import { RFLINK_FIELDS } from '../src/devices/featureMap.js';
@@ -89,6 +91,7 @@ test('the roles stay on category/type pairs Gladys knows how to render', () => {
   ].sort();
   assert.deepEqual(used, [
     'button|click',
+    'curtain|state',
     'doorbell|ring',
     'input|binary',
     'leak-sensor|binary',
@@ -96,11 +99,57 @@ test('the roles stay on category/type pairs Gladys knows how to render', () => {
     'motion-sensor|binary',
     'opening-sensor|binary',
     'presence-sensor|binary',
+    'shutter|state',
     'siren|binary',
     'smoke-sensor|binary',
     'switch|binary',
     'vibration-sensor|binary',
   ]);
+});
+
+// --- Covers: Somfy RTS and friends -------------------------------------------
+
+test('a frame carrying UP, DOWN or STOP names its own class', () => {
+  // Unlike an EV1527 chip, this is not a guess: no switch, remote or sensor
+  // emits those words. `20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;` is a cover.
+  assert.equal(roleFromFrame({ CMD: 'DOWN' }), 'shutter');
+  assert.equal(roleFromFrame({ CMD: 'UP' }), 'shutter');
+  assert.equal(roleFromFrame({ CMD: 'STOP' }), 'shutter');
+  assert.equal(roleFromFrame({ CMD: 'ON' }), null);
+  assert.equal(roleFromFrame({ TEMP: '00b4' }), null);
+  assert.equal(roleFromFrame(), null);
+});
+
+test('a shutter reads UP/DOWN/STOP as the three Gladys cover values', () => {
+  // COVER_STATE in the Gladys core: OPEN 1, STOP 0, CLOSE -1.
+  const shutter = applyRole(RFLINK_FIELDS.CMD, 'CMD', 'shutter');
+  assert.equal(shutter.category, CATEGORIES.SHUTTER);
+  assert.equal(shutter.type, TYPES.SHUTTER.STATE);
+  assert.equal(shutter.read_only, false);
+  assert.equal(shutter.min, -1);
+  assert.equal(shutter.max, 1);
+
+  assert.equal(shutter.decode('UP'), 1);
+  assert.equal(shutter.decode('DOWN'), -1);
+  assert.equal(shutter.decode('STOP'), 0);
+  assert.equal(shutter.decode('ON'), null, 'a cover has no ON');
+});
+
+test('a shutter writes the three cover values back as RFLink words', () => {
+  assert.equal(encodeRoleCommand('shutter', 1), 'UP');
+  assert.equal(encodeRoleCommand('shutter', -1), 'DOWN');
+  assert.equal(encodeRoleCommand('shutter', 0), 'STOP');
+  assert.equal(encodeRoleCommand('curtain', 1), 'UP');
+  // Out of the cover vocabulary: null, never a silent fallback to ON.
+  assert.equal(encodeRoleCommand('shutter', 42), null);
+  // A role without its own vocabulary says so, so ON/OFF stays the default.
+  assert.equal(encodeRoleCommand('switch', 1), undefined);
+  assert.equal(encodeRoleCommand('motion', 1), undefined);
+});
+
+test('a cover is never pulsed: a closed shutter stays closed', () => {
+  assert.equal(pulseSecondsFor({ role: 'shutter' }), null);
+  assert.equal(pulseSecondsFor({ role: 'curtain' }), null);
 });
 
 test('roleKeys lists exactly the catalog', () => {

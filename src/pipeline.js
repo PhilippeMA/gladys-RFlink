@@ -18,7 +18,7 @@ import { createLogger } from '@gladysassistant/integration-sdk';
 import { buildProtocolFilter } from './config.js';
 import { controllableLabel, percentToLevel, RFLINK_FIELDS } from './devices/featureMap.js';
 import { externalIdsFor } from './devices/registry.js';
-import { pulseSecondsFor } from './devices/roles.js';
+import { encodeRoleCommand, pulseSecondsFor } from './devices/roles.js';
 import { buildDeviceCommand, FRAME_KINDS } from './rflink/protocol.js';
 
 const defaultLogger = createLogger({ name: 'pipeline' });
@@ -34,14 +34,23 @@ export const REPLAY_MAX_AGE_MS = 6 * 60 * 60 * 1_000;
 
 /**
  * Translate a Gladys command into the RFLink command word.
+ *
+ * The device's ROLE decides the vocabulary: a shutter answers UP/DOWN/STOP
+ * where a plug answers ON/OFF, and both ride on the same `CMD` field.
+ * @param {object} entry - The registry entry of the device.
  * @param {string} featureKey - Feature key, e.g. 'cmd' or 'brightness'.
  * @param {number} value - The value Gladys asked for.
- * @returns {string|null} The RFLink command, or null for a read-only feature.
+ * @returns {string|null} The RFLink command, or null when it cannot be sent.
  */
-export function commandFor(featureKey, value) {
+export function commandFor(entry, featureKey, value) {
   switch (controllableLabel(featureKey)) {
-    case 'CMD':
-      return Number(value) === 0 ? 'OFF' : 'ON';
+    case 'CMD': {
+      const roleCommand = encodeRoleCommand(entry?.role, value);
+      // `undefined` means the role has no vocabulary of its own; `null` means
+      // it has one and this value is not in it — which must not silently fall
+      // back to ON.
+      return roleCommand === undefined ? (Number(value) === 0 ? 'OFF' : 'ON') : roleCommand;
+    }
     case 'SET_LEVEL':
       // RFLink dimmers take the level (0-15) as the command word itself.
       return String(percentToLevel(Number(value)));
@@ -296,9 +305,9 @@ export function createPipeline({
 
       // The feature external_id is `<device external_id>:<feature key>`.
       const featureKey = feature.external_id.slice(device.external_id.length + 1);
-      const command = commandFor(featureKey, value);
+      const command = commandFor(target, featureKey, value);
       if (command === null) {
-        throw new Error(`Feature ${featureKey} cannot be controlled`);
+        throw new Error(`Feature ${featureKey} cannot be controlled with value ${value}`);
       }
 
       const line = buildDeviceCommand(target, command);

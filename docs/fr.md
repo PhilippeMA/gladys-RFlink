@@ -149,6 +149,89 @@ la fermeture, donc le réinitialiser effacerait une porte réellement restée
 ouverte. Saisissez `0` pour désactiver la remise à zéro et la piloter vous-même
 depuis un scénario.
 
+## Volets roulants Somfy RTS
+
+Les appareils RTS sont reconnus tout seuls : une trame portant `CMD=UP`,
+`CMD=DOWN` ou `CMD=STOP` ne peut être qu'un volet, il n'y a donc aucun type à
+déclarer. Appuyez sur un bouton de votre télécommande Somfy et le volet
+apparaît dans l'onglet Découverte avec une commande monter / stop / descendre :
+
+```
+20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;
+```
+
+Ajoutez-le et il fonctionne déjà **dans un sens** : chaque appui sur la
+télécommande physique est reflété dans Gladys. Envoyer des ordres demande une
+étape de plus.
+
+### Pourquoi on ne peut pas commander l'adresse qu'on voit
+
+Le RTS est un protocole à **code tournant**. Chaque émission porte un compteur
+que le moteur vérifie et mémorise : un récepteur n'obéit qu'à une télécommande
+qui lui a été présentée, et qui envoie le code attendu suivant. RFLink tient son
+propre compteur par adresse, et ce compteur n'est pas celui de votre
+télécommande — rejouer son adresse `f1e260` ne fonctionne pas.
+
+La façon prévue d'étendre un RTS est de déclarer **une télécommande de plus**.
+RFLink devient cette télécommande supplémentaire, sur une adresse que vous
+choisissez.
+
+### Appairer RFLink avec un volet
+
+1. Choisissez une adresse libre, jamais utilisée — six chiffres hexadécimaux,
+   par exemple `100001`. Une adresse différente par volet (`100002`,
+   `100003`…), et notez-les.
+2. Prenez la télécommande Somfy qui pilote déjà le volet et maintenez son
+   bouton **PROG** (au dos, ~2-3 s) jusqu'à ce que le volet fasse un **bref
+   va-et-vient**. Il attend maintenant une nouvelle télécommande, pendant
+   quelques secondes.
+3. Dans Gladys, lancez l'action **Envoyer une commande brute** avec :
+
+   ```
+   10;RTS;100001;0;PAIR;
+   ```
+
+4. Le volet refait un va-et-vient : il a accepté RFLink comme télécommande.
+5. Testez avec `10;RTS;100001;0;DOWN;` — le volet doit descendre.
+6. Envoyez une commande de plus (par exemple `10;RTS;100001;0;UP;`) et la
+   nouvelle télécommande virtuelle apparaît dans l'onglet **Découverte**.
+   Ajoutez-la, nommez-la d'après la pièce, et vous avez le contrôle complet.
+
+À répéter par volet. Pour annuler un appairage, remettez le moteur en mode
+programmation avec PROG et renvoyez `PAIR` sur la même adresse.
+
+### Deux appareils par volet
+
+Après l'appairage vous avez, dans la Découverte, l'adresse de votre
+**télécommande physique** (`f1e260`, découverte à l'écoute) et l'adresse que
+**RFLink possède** (`100001`). Ce sont deux appareils distincts :
+
+- celui de la télécommande physique rapporte ce que vous faites à la main —
+  utile si vous voulez qu'un scénario réagisse à un appui sur la télécommande
+  murale ;
+- l'adresse propre à RFLink est celle qui pilote réellement le moteur.
+
+Si seul le pilotage vous intéresse, ajoutez la seconde et utilisez **Oublier les
+appareils non ajoutés** pour effacer la première.
+
+### Dépannage RTS
+
+- **Le volet ne bouge jamais au `PAIR`.** Le moteur n'était plus en mode
+  programmation (la fenêtre est courte : envoyez la commande dans les quelques
+  secondes), ou l'émetteur RFLink est hors de portée. Le RTS est en
+  433,42 MHz, légèrement décalé du 433,92 habituel : un émetteur RFLink
+  standard fonctionne à courte portée, mais c'est un quartz 433,42 MHz dédié
+  qui donne la portée complète.
+- **Ça a marché, puis plus rien.** Le code tournant est désynchronisé.
+  Ré-appairez la même adresse, ou appairez-en une nouvelle.
+- **Voir ce que RFLink stocke.** `10;RTSSHOW;` liste les codes tournants qu'il
+  conserve, `10;RTSCLEAN;` les efface — après quoi chaque adresse appairée doit
+  l'être à nouveau. Les deux passent par **Envoyer une commande brute**.
+
+> La commande `PAIR` et les utilitaires `RTSSHOW` / `RTSCLEAN` proviennent de la
+> référence du protocole RFLink, pas d'un test sur matériel réel ici. Le chemin
+> de pilotage UP / DOWN / STOP, lui, est couvert de bout en bout par les tests.
+
 ## Piloter un appareil
 
 Tout appareil que RFLink rapporte avec une commande (`CMD=ON` / `CMD=OFF`)

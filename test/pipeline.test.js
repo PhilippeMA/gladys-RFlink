@@ -6,6 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DEVICE_FEATURE_CATEGORIES as CATEGORIES } from '@gladysassistant/integration-sdk';
 
 import { createFakeGladys, createFakeStore } from './helpers/fakeGladys.js';
 import { commandFor, createPipeline } from '../src/pipeline.js';
@@ -361,9 +362,94 @@ test('re-typing a device changes its Gladys category, not its feature key', asyn
   assert.equal(after.external_id, before.external_id, 'the history must survive the re-typing');
 });
 
+// --- Somfy RTS shutters ------------------------------------------------------
+
+const RTS_ID = 'ext:rflink:rts:f1e260-01';
+
+test('an RTS remote creates a shutter, not a switch', async () => {
+  const { pipeline, registry, gladys } = setup({ createdDevices: [{ external_id: RTS_ID }] });
+
+  // Straight from a Somfy RTS remote.
+  await feed(pipeline, '20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;');
+
+  const [device] = registry.buildDiscoveredDevices();
+  const [feature] = device.features;
+  assert.equal(feature.category, CATEGORIES.SHUTTER);
+  assert.equal(feature.read_only, false);
+  assert.deepEqual(gladys.published, [{ featureExternalId: `${RTS_ID}:cmd`, state: -1 }]);
+});
+
+test('pressing the physical remote is reflected in Gladys', async () => {
+  const { pipeline, gladys } = setup({ createdDevices: [{ external_id: RTS_ID }] });
+
+  await feed(pipeline, '20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;');
+  await feed(pipeline, '20;21;RTS;ID=f1e260;SWITCH=01;CMD=UP;');
+  await feed(pipeline, '20;23;RTS;ID=f1e260;SWITCH=01;CMD=STOP;');
+
+  assert.deepEqual(
+    gladys.published.map(({ state }) => state),
+    [-1, 1, 0],
+  );
+});
+
+test('the Gladys cover buttons become UP, DOWN and STOP on the air', async () => {
+  const { pipeline, sent } = setup({ createdDevices: [{ external_id: RTS_ID }] });
+  await feed(pipeline, '20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;');
+
+  const device = { external_id: RTS_ID };
+  const feature = { external_id: `${RTS_ID}:cmd` };
+  await pipeline.handleSetValue(device, feature, 1);
+  await pipeline.handleSetValue(device, feature, -1);
+  await pipeline.handleSetValue(device, feature, 0);
+
+  assert.deepEqual(sent, [
+    '10;RTS;f1e260;01;UP;',
+    '10;RTS;f1e260;01;DOWN;',
+    '10;RTS;f1e260;01;STOP;',
+  ]);
+});
+
+test('a value outside the cover vocabulary is refused, not sent as ON', async () => {
+  const { pipeline, sent } = setup({ createdDevices: [{ external_id: RTS_ID }] });
+  await feed(pipeline, '20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;');
+
+  await assert.rejects(
+    pipeline.handleSetValue({ external_id: RTS_ID }, { external_id: `${RTS_ID}:cmd` }, 42),
+    /cannot be controlled/,
+  );
+  assert.deepEqual(sent, []);
+});
+
+test('a shutter learned as a switch before the fix is re-typed on the next frame', async () => {
+  const { pipeline, registry, changes } = setup();
+  // Simulate the /data cache written by a version that only knew ON/OFF.
+  await feed(pipeline, '20;2D;RTS;ID=f1e260;SWITCH=01;CMD=ON;');
+  assert.equal(registry.list()[0].role, 'switch');
+
+  const upgrade = registry.learn(parseFrame('20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;'));
+
+  assert.equal(upgrade.entry.role, 'shutter');
+  assert.equal(upgrade.changed, true, 'Gladys must be offered the structure change');
+  assert.equal(changes.count, 1);
+});
+
+test('a role the user chose by hand is never overruled by a frame', async () => {
+  const { pipeline, registry } = setup({ createdDevices: [{ external_id: RTS_ID }] });
+  await feed(pipeline, '20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;');
+  registry.setRole(RTS_ID, 'curtain');
+
+  await feed(pipeline, '20;21;RTS;ID=f1e260;SWITCH=01;CMD=UP;');
+
+  assert.equal(registry.list()[0].role, 'curtain');
+});
+
 test('commandFor maps the controllable features and refuses the rest', () => {
-  assert.equal(commandFor(RFLINK_FIELDS.CMD.key, 1), 'ON');
-  assert.equal(commandFor(RFLINK_FIELDS.CMD.key, 0), 'OFF');
-  assert.equal(commandFor(RFLINK_FIELDS.SET_LEVEL.key, 50), '8');
-  assert.equal(commandFor(RFLINK_FIELDS.TEMP.key, 21), null);
+  const plug = { role: 'switch' };
+  assert.equal(commandFor(plug, RFLINK_FIELDS.CMD.key, 1), 'ON');
+  assert.equal(commandFor(plug, RFLINK_FIELDS.CMD.key, 0), 'OFF');
+  assert.equal(commandFor(plug, RFLINK_FIELDS.SET_LEVEL.key, 50), '8');
+  assert.equal(commandFor(plug, RFLINK_FIELDS.TEMP.key, 21), null);
+  // The role picks the vocabulary: the same feature key, two languages.
+  assert.equal(commandFor({ role: 'shutter' }, RFLINK_FIELDS.CMD.key, 1), 'UP');
+  assert.equal(commandFor(undefined, RFLINK_FIELDS.CMD.key, 1), 'ON');
 });

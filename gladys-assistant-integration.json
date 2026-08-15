@@ -10,14 +10,8 @@
   "docker_image": "ghcr.io/philippema/gladys-rflink:1.0.1",
   "gladys_version": ">=4.86.0",
   "cover_image": "https://raw.githubusercontent.com/PhilippeMA/gladys-RFlink/main/cover.png",
-  "categories": [
-    "protocols",
-    "lighting",
-    "environment"
-  ],
-  "transports": [
-    "local"
-  ],
+  "categories": ["protocols", "lighting", "environment"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
@@ -230,6 +224,20 @@
               "label": {
                 "en": "Light",
                 "fr": "Lampe"
+              }
+            },
+            {
+              "value": "shutter",
+              "label": {
+                "en": "Roller shutter",
+                "fr": "Volet roulant"
+              }
+            },
+            {
+              "value": "curtain",
+              "label": {
+                "en": "Curtain / awning",
+                "fr": "Rideau / store"
               }
             },
             {

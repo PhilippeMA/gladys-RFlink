@@ -135,6 +135,84 @@ A door contact is never reset: it transmits on opening **and** on closing, so
 resetting it would erase a door that is genuinely still open. Enter `0` to
 disable the reset and drive it yourself from a scene.
 
+## Somfy RTS roller shutters
+
+RTS devices are recognised on their own — a frame carrying `CMD=UP`, `CMD=DOWN`
+or `CMD=STOP` can only be a cover, so no type has to be declared. Press a
+button on your Somfy remote and the shutter appears in the Discovery tab with
+an open / stop / close control:
+
+```
+20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;
+```
+
+Add it and it already works **one way**: every press on the physical remote is
+reflected in Gladys. Sending orders needs one more step.
+
+### Why you cannot just command the address you see
+
+RTS is a **rolling-code** protocol. Each transmission carries a counter that
+the motor checks and remembers, so a receiver only obeys a remote it has been
+introduced to, sending the next expected code. RFLink keeps its own counter per
+address, and that counter is not the one inside your handheld remote — replaying
+its address `f1e260` does not work.
+
+The way RTS is meant to be extended is to declare **one more remote**. RFLink
+becomes that extra remote, on an address of your choosing.
+
+### Pairing RFLink with a shutter
+
+1. Pick a free address you have not used before — six hexadecimal digits, for
+   example `100001`. Use a different one per shutter (`100002`, `100003`…) and
+   write them down.
+2. Take the Somfy remote that already drives the shutter and hold its **PROG**
+   button (on the back, ~2-3 s) until the shutter **jogs** briefly. It is now
+   waiting for a new remote, for a few seconds.
+3. In Gladys, run the **Send a raw command** action with:
+
+   ```
+   10;RTS;100001;0;PAIR;
+   ```
+
+4. The shutter jogs again: it has accepted RFLink as a remote.
+5. Test it with `10;RTS;100001;0;DOWN;` — the shutter should close.
+6. Send one more command (for example `10;RTS;100001;0;UP;`) and the new
+   virtual remote appears in the **Discovery** tab. Add it, name it after the
+   room, and you have full control.
+
+Repeat per shutter. To undo a pairing, put the motor back in programming mode
+with the PROG button and send `PAIR` again on the same address.
+
+### Two devices per shutter
+
+After pairing you have, in the Discovery tab, the address of your **physical
+remote** (`f1e260`, discovered by listening) and the address **RFLink owns**
+(`100001`). They are separate devices:
+
+- the physical remote's device reports what you do by hand — useful if you want
+  a scene to react to someone pressing the wall remote;
+- RFLink's own address is the one that actually drives the motor.
+
+If you only care about control, add the second one and use **Forget
+undiscovered devices** to clear the first.
+
+### RTS troubleshooting
+
+- **The shutter never jogs on `PAIR`.** The motor was not in programming mode
+  any more (the window is short — send the command within a few seconds), or
+  the RFLink transmitter is out of range. RTS is 433.42 MHz, slightly off the
+  usual 433.92: a standard RFLink transceiver works at short range, but a
+  dedicated 433.42 MHz crystal is what gives full range.
+- **It worked, then stopped.** The rolling code is out of sync. Re-pair the
+  same address, or pair a fresh one.
+- **Checking what RFLink stores.** `10;RTSSHOW;` lists the rolling codes it
+  keeps, `10;RTSCLEAN;` wipes them — after which every paired address has to be
+  paired again. Both go through **Send a raw command**.
+
+> The `PAIR` command and the `RTSSHOW` / `RTSCLEAN` helpers come from the
+> RFLink protocol reference rather than from a test on real hardware here. The
+> UP / DOWN / STOP control path is exercised end to end by the test suite.
+
 ## Controlling a device
 
 Any device RFLink reports with a command (`CMD=ON` / `CMD=OFF`) gets an on/off

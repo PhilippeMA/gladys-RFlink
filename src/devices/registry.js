@@ -17,7 +17,7 @@
 import { createLogger } from '@gladysassistant/integration-sdk';
 
 import { fieldDescriptor, normalizeMeasurements, supportedLabels } from './featureMap.js';
-import { applyRole, DEFAULT_ROLE, isKnownRole } from './roles.js';
+import { applyRole, DEFAULT_ROLE, isKnownRole, roleFromFrame } from './roles.js';
 
 const defaultLogger = createLogger({ name: 'registry' });
 
@@ -119,6 +119,9 @@ export class DeviceRegistry {
         // A role the code no longer knows (downgrade, typo in a hand-edited
         // file) falls back to the default rather than breaking the device.
         role: isKnownRole(entry.role) ? entry.role : DEFAULT_ROLE,
+        // Set by the user through the action: auto-detection must never
+        // overrule a deliberate choice.
+        roleLocked: entry.roleLocked === true,
         resetAfter: typeof entry.resetAfter === 'number' ? entry.resetAfter : null,
         firstSeen: entry.firstSeen ?? new Date().toISOString(),
         lastSeen: entry.lastSeen ?? null,
@@ -186,7 +189,11 @@ export class DeviceRegistry {
       const entry = {
         ...target,
         labels,
-        role: DEFAULT_ROLE,
+        // A frame carrying UP/DOWN/STOP names its own class, so it is honoured
+        // right away; anything else stays a switch until the user says
+        // otherwise.
+        role: roleFromFrame(values) ?? DEFAULT_ROLE,
+        roleLocked: false,
         resetAfter: null,
         firstSeen: now,
         lastSeen: now,
@@ -203,8 +210,19 @@ export class DeviceRegistry {
       known.labels = [...known.labels, ...newLabels];
       this.logger.info(`${defaultName(known)} gained: ${newLabels.join(', ')}`);
     }
+
+    // A device learned before the code could read UP/DOWN/STOP — or one whose
+    // first frame happened to be ambiguous — is upgraded the moment it states
+    // its class. A role the user chose by hand is never overruled.
+    const detected = roleFromFrame(values);
+    const retyped = detected !== null && !known.roleLocked && known.role !== detected;
+    if (retyped) {
+      this.logger.info(`${defaultName(known)} reports as a ${detected}, re-typing it`);
+      known.role = detected;
+    }
+
     this.save();
-    return { entry: known, values, isNew: false, changed: newLabels.length > 0 };
+    return { entry: known, values, isNew: false, changed: newLabels.length > 0 || retyped };
   }
 
   /**
@@ -264,6 +282,7 @@ export class DeviceRegistry {
       unit: unit === undefined || unit === '' ? null : unit,
       labels: [],
       role: DEFAULT_ROLE,
+      roleLocked: false,
       resetAfter: null,
     };
   }
@@ -285,6 +304,8 @@ export class DeviceRegistry {
         continue;
       }
       entry.role = isKnownRole(role) ? role : DEFAULT_ROLE;
+      // Deliberate choice: auto-detection stops touching this device.
+      entry.roleLocked = true;
       entry.resetAfter = typeof resetAfter === 'number' ? resetAfter : null;
       this.logger.info(`${defaultName(entry)} is now a "${entry.role}"`);
       this.save();

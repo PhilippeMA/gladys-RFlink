@@ -33,6 +33,32 @@ import {
 /** The role every device starts with: what RFLink reports, taken literally. */
 export const DEFAULT_ROLE = 'switch';
 
+// Gladys drives a cover with three values (COVER_STATE in the core), and
+// Somfy RTS speaks the same three words on the air. This is the whole
+// translation.
+const COVER = { OPEN: 1, STOP: 0, CLOSE: -1 };
+
+const COVER_FROM_RFLINK = { UP: COVER.OPEN, DOWN: COVER.CLOSE, STOP: COVER.STOP };
+const RFLINK_FROM_COVER = { [COVER.OPEN]: 'UP', [COVER.CLOSE]: 'DOWN', [COVER.STOP]: 'STOP' };
+
+/**
+ * The RFLink command words that mean "this is a cover, not a switch".
+ *
+ * Unlike an EV1527 chip, a frame carrying UP/DOWN/STOP states its own device
+ * class: `20;1E;RTS;ID=f1e260;SWITCH=01;CMD=DOWN;` cannot be anything but a
+ * shutter, an awning or a curtain. Reading it is not guessing.
+ */
+export const COVER_COMMANDS = Object.keys(COVER_FROM_RFLINK);
+
+const coverBehaviour = {
+  controllable: true,
+  pulseSeconds: null,
+  min: COVER.CLOSE,
+  max: COVER.OPEN,
+  decode: (raw) => COVER_FROM_RFLINK[String(raw).toUpperCase()] ?? null,
+  encode: (value) => RFLINK_FROM_COVER[Number(value)] ?? null,
+};
+
 /**
  * The role catalog.
  *
@@ -54,6 +80,18 @@ export const DEVICE_ROLES = {
     type: TYPES.LIGHT.BINARY,
     controllable: true,
     pulseSeconds: null,
+  },
+  shutter: {
+    name: 'Shutter',
+    category: CATEGORIES.SHUTTER,
+    type: TYPES.SHUTTER.STATE,
+    ...coverBehaviour,
+  },
+  curtain: {
+    name: 'Curtain',
+    category: CATEGORIES.CURTAIN,
+    type: TYPES.CURTAIN.STATE,
+    ...coverBehaviour,
   },
   siren: {
     name: 'Siren',
@@ -165,7 +203,44 @@ export function applyRole(descriptor, label, role) {
     category: spec.category,
     type: spec.type,
     read_only: !spec.controllable,
+    // A cover does not just look different from a switch, it speaks a
+    // different vocabulary: UP/DOWN/STOP on the air, -1/0/1 in Gladys. A role
+    // may therefore replace the range and the decoder too.
+    ...(spec.min === undefined ? {} : { min: spec.min }),
+    ...(spec.max === undefined ? {} : { max: spec.max }),
+    ...(spec.decode === undefined ? {} : { decode: spec.decode }),
   };
+}
+
+/**
+ * Turn a Gladys command value into the RFLink command word, for a role that
+ * does not speak ON/OFF.
+ * @param {string} [role] - The role of the device.
+ * @param {number} value - The value Gladys asked for.
+ * @returns {string|null|undefined} The command word, null when the value is out
+ *   of range, undefined when the role has no vocabulary of its own.
+ */
+export function encodeRoleCommand(role, value) {
+  if (!isKnownRole(role) || DEVICE_ROLES[role].encode === undefined) {
+    return undefined;
+  }
+  return DEVICE_ROLES[role].encode(value);
+}
+
+/**
+ * Guess the role of a device from what its frame actually says.
+ *
+ * This is NOT the EV1527 problem: a `CMD=UP` is a device class stated on the
+ * air, so honouring it is reading, not inferring. Anything else keeps the
+ * default and waits for the user to declare it.
+ * @param {Record<string, string>} values - Normalized measurements of a frame.
+ * @returns {string|null} The role the frame implies, or null.
+ */
+export function roleFromFrame(values = {}) {
+  // UP, DOWN and STOP are all cover-only vocabulary in RFLink: no switch, no
+  // remote and no sensor emits them.
+  const command = String(values.CMD ?? '').toUpperCase();
+  return COVER_COMMANDS.includes(command) ? 'shutter' : null;
 }
 
 /**
