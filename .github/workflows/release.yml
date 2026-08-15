@@ -71,6 +71,13 @@ jobs:
             gladys-assistant-integration.json > "$tmp"
           mv "$tmp" gladys-assistant-integration.json
 
+          # jq re-prints the WHOLE document in its own style (short arrays get
+          # expanded one item per line), which does not match Prettier — so the
+          # release commit would land on main failing the `format:check` gate
+          # of ci.yml, on a file nobody edited by hand. Hand it back to the
+          # repository formatter.
+          npx --yes prettier@3 --write gladys-assistant-integration.json
+
           echo "version=${new_version}" >> "$GITHUB_OUTPUT"
 
       # Note: if the branch you release from is protected against direct pushes,
