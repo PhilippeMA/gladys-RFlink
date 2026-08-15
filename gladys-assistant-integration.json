@@ -6,17 +6,26 @@
     "en": "433/868 MHz devices through an RFLink gateway: switches, dimmers, sensors, weather stations.",
     "fr": "Appareils 433/868 MHz via une passerelle RFLink : interrupteurs, variateurs, capteurs, météo."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/philippema/gladys-rflink:1.0.0",
+  "version": "1.0.1",
+  "docker_image": "ghcr.io/philippema/gladys-rflink:1.0.1",
   "gladys_version": ">=4.86.0",
   "cover_image": "https://raw.githubusercontent.com/PhilippeMA/gladys-RFlink/main/cover.png",
-  "categories": ["protocols", "lighting", "environment"],
-  "transports": ["local"],
+  "categories": [
+    "protocols",
+    "lighting",
+    "environment"
+  ],
+  "transports": [
+    "local"
+  ],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Connect your RFLink gateway", "fr": "Connectez votre passerelle RFLink" },
+      "label": {
+        "en": "Connect your RFLink gateway",
+        "fr": "Connectez votre passerelle RFLink"
+      },
       "description": {
         "en": "This integration talks to the RFLink gateway over TCP. An RFLink32 board on ESP8266/ESP32 exposes its TCP server natively (port 1234). A USB RFLink plugged into the Gladys host must be bridged to TCP, for example with ser2net, because an integration container has no access to serial ports. See the documentation for the step by step.",
         "fr": "Cette intégration dialogue avec la passerelle RFLink en TCP. Une carte RFLink32 sur ESP8266/ESP32 expose son serveur TCP nativement (port 1234). Un RFLink USB branché sur la machine Gladys doit être exposé en TCP, par exemple avec ser2net, car un conteneur d'intégration n'a pas accès aux ports série. Voir la documentation pour le pas à pas."
@@ -24,29 +33,44 @@
       "links": [
         {
           "url": "https://www.rflink.nl/",
-          "label": { "en": "RFLink project", "fr": "Projet RFLink" }
+          "label": {
+            "en": "RFLink project",
+            "fr": "Projet RFLink"
+          }
         },
         {
           "url": "https://github.com/cpainchaud/RFLink32",
-          "label": { "en": "RFLink32 (ESP, native TCP)", "fr": "RFLink32 (ESP, TCP natif)" }
+          "label": {
+            "en": "RFLink32 (ESP, native TCP)",
+            "fr": "RFLink32 (ESP, TCP natif)"
+          }
         }
       ]
     },
     {
       "key": "host",
       "type": "string",
-      "label": { "en": "Gateway address", "fr": "Adresse de la passerelle" },
+      "label": {
+        "en": "Gateway address",
+        "fr": "Adresse de la passerelle"
+      },
       "description": {
         "en": "IP address or hostname of the RFLink gateway on your network.",
         "fr": "Adresse IP ou nom d'hôte de la passerelle RFLink sur votre réseau."
       },
-      "placeholder": { "en": "192.168.1.42", "fr": "192.168.1.42" },
+      "placeholder": {
+        "en": "192.168.1.42",
+        "fr": "192.168.1.42"
+      },
       "required": true
     },
     {
       "key": "port",
       "type": "number",
-      "label": { "en": "TCP port", "fr": "Port TCP" },
+      "label": {
+        "en": "TCP port",
+        "fr": "Port TCP"
+      },
       "description": {
         "en": "1234 for RFLink32, or the port your serial bridge listens on.",
         "fr": "1234 pour RFLink32, ou le port sur lequel écoute votre passerelle série."
@@ -59,7 +83,10 @@
     {
       "key": "discovery",
       "type": "section",
-      "label": { "en": "Discovering your devices", "fr": "Découverte de vos appareils" },
+      "label": {
+        "en": "Discovering your devices",
+        "fr": "Découverte de vos appareils"
+      },
       "description": {
         "en": "A 433 MHz device is invisible until it transmits: press a remote button, or wait for a sensor to send its measurement, and it appears in the Discovery tab. Your receiver also hears your neighbours, so turn auto-discovery off once your devices are added.",
         "fr": "Un appareil 433 MHz est invisible tant qu'il n'émet pas : appuyez sur un bouton de télécommande, ou attendez qu'un capteur envoie sa mesure, et il apparaît dans l'onglet Découverte. Votre récepteur entend aussi vos voisins : désactivez la découverte automatique une fois vos appareils ajoutés."
@@ -68,7 +95,10 @@
     {
       "key": "auto_discover",
       "type": "boolean",
-      "label": { "en": "Automatic discovery", "fr": "Découverte automatique" },
+      "label": {
+        "en": "Automatic discovery",
+        "fr": "Découverte automatique"
+      },
       "description": {
         "en": "Add every new device heard on the air to the Discovery tab. Known devices keep working when this is off.",
         "fr": "Ajoute à l'onglet Découverte tout nouvel appareil entendu. Les appareils déjà connus continuent de fonctionner quand c'est désactivé."
@@ -79,18 +109,27 @@
     {
       "key": "ignored_protocols",
       "type": "string",
-      "label": { "en": "Ignored protocols", "fr": "Protocoles ignorés" },
+      "label": {
+        "en": "Ignored protocols",
+        "fr": "Protocoles ignorés"
+      },
       "description": {
         "en": "Comma-separated RFLink protocol names to drop entirely, for the ones that flood your receiver.",
         "fr": "Noms de protocoles RFLink à ignorer, séparés par des virgules, pour ceux qui saturent votre récepteur."
       },
-      "placeholder": { "en": "Oregon TempHygro, Cresta", "fr": "Oregon TempHygro, Cresta" },
+      "placeholder": {
+        "en": "Oregon TempHygro, Cresta",
+        "fr": "Oregon TempHygro, Cresta"
+      },
       "required": false
     },
     {
       "key": "debug_frames",
       "type": "boolean",
-      "label": { "en": "Log raw frames", "fr": "Journaliser les trames brutes" },
+      "label": {
+        "en": "Log raw frames",
+        "fr": "Journaliser les trames brutes"
+      },
       "description": {
         "en": "Write every line received from the gateway to the logs. Useful while pairing a device, noisy the rest of the time.",
         "fr": "Écrit dans les logs chaque ligne reçue de la passerelle. Utile pendant l'appairage d'un appareil, verbeux le reste du temps."
@@ -102,7 +141,10 @@
   "actions": [
     {
       "key": "test_connection",
-      "label": { "en": "Test the gateway", "fr": "Tester la passerelle" },
+      "label": {
+        "en": "Test the gateway",
+        "fr": "Tester la passerelle"
+      },
       "description": {
         "en": "Sends 10;PING; and waits for the gateway to answer PONG.",
         "fr": "Envoie 10;PING; et attend la réponse PONG de la passerelle."
@@ -111,7 +153,10 @@
     },
     {
       "key": "gateway_version",
-      "label": { "en": "Read the firmware version", "fr": "Lire la version du firmware" },
+      "label": {
+        "en": "Read the firmware version",
+        "fr": "Lire la version du firmware"
+      },
       "description": {
         "en": "Sends 10;VERSION; and shows the firmware, revision and build of your RFLink.",
         "fr": "Envoie 10;VERSION; et affiche le firmware, la révision et le build de votre RFLink."
@@ -120,7 +165,10 @@
     },
     {
       "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
+      "label": {
+        "en": "Identify a device",
+        "fr": "Identifier un appareil"
+      },
       "description": {
         "en": "Switches the chosen device on, then off, so you can tell it apart from an identical one.",
         "fr": "Allume puis éteint l'appareil choisi, pour le distinguer d'un appareil identique."
@@ -131,14 +179,20 @@
           "key": "device",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
+          "label": {
+            "en": "Device",
+            "fr": "Appareil"
+          },
           "required": true
         }
       ]
     },
     {
       "key": "set_device_role",
-      "label": { "en": "Set a device type", "fr": "Définir le type d'un appareil" },
+      "label": {
+        "en": "Set a device type",
+        "fr": "Définir le type d'un appareil"
+      },
       "description": {
         "en": "Chips like EV1527 or PT2262 send the same frame whether they sit in a motion detector, a door contact or a wall plug, so RFLink reports them all as a switch. Tell Gladys what yours really is.",
         "fr": "Les puces type EV1527 ou PT2262 émettent la même trame qu'elles soient dans un détecteur de mouvement, un contact de porte ou une prise, donc RFLink les rapporte toutes comme un interrupteur. Indiquez à Gladys ce qu'est vraiment le vôtre."
@@ -149,57 +203,114 @@
           "key": "device",
           "type": "select",
           "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
+          "label": {
+            "en": "Device",
+            "fr": "Appareil"
+          },
           "required": true
         },
         {
           "key": "role",
           "type": "select",
-          "label": { "en": "This device is a", "fr": "Cet appareil est un" },
+          "label": {
+            "en": "This device is a",
+            "fr": "Cet appareil est un"
+          },
           "required": true,
           "options": [
             {
               "value": "switch",
-              "label": { "en": "Switch / plug", "fr": "Interrupteur / prise" }
+              "label": {
+                "en": "Switch / plug",
+                "fr": "Interrupteur / prise"
+              }
             },
-            { "value": "light", "label": { "en": "Light", "fr": "Lampe" } },
-            { "value": "siren", "label": { "en": "Siren", "fr": "Sirène" } },
+            {
+              "value": "light",
+              "label": {
+                "en": "Light",
+                "fr": "Lampe"
+              }
+            },
+            {
+              "value": "siren",
+              "label": {
+                "en": "Siren",
+                "fr": "Sirène"
+              }
+            },
             {
               "value": "motion",
-              "label": { "en": "Motion detector", "fr": "Détecteur de mouvement" }
+              "label": {
+                "en": "Motion detector",
+                "fr": "Détecteur de mouvement"
+              }
             },
             {
               "value": "presence",
-              "label": { "en": "Presence sensor", "fr": "Capteur de présence" }
+              "label": {
+                "en": "Presence sensor",
+                "fr": "Capteur de présence"
+              }
             },
             {
               "value": "opening",
-              "label": { "en": "Door / window contact", "fr": "Contact de porte / fenêtre" }
+              "label": {
+                "en": "Door / window contact",
+                "fr": "Contact de porte / fenêtre"
+              }
             },
-            { "value": "smoke", "label": { "en": "Smoke detector", "fr": "Détecteur de fumée" } },
+            {
+              "value": "smoke",
+              "label": {
+                "en": "Smoke detector",
+                "fr": "Détecteur de fumée"
+              }
+            },
             {
               "value": "leak",
-              "label": { "en": "Water leak probe", "fr": "Sonde de fuite d'eau" }
+              "label": {
+                "en": "Water leak probe",
+                "fr": "Sonde de fuite d'eau"
+              }
             },
             {
               "value": "vibration",
-              "label": { "en": "Vibration sensor", "fr": "Capteur de vibration" }
+              "label": {
+                "en": "Vibration sensor",
+                "fr": "Capteur de vibration"
+              }
             },
-            { "value": "doorbell", "label": { "en": "Doorbell", "fr": "Sonnette" } },
+            {
+              "value": "doorbell",
+              "label": {
+                "en": "Doorbell",
+                "fr": "Sonnette"
+              }
+            },
             {
               "value": "button",
-              "label": { "en": "Button / remote", "fr": "Bouton / télécommande" }
+              "label": {
+                "en": "Button / remote",
+                "fr": "Bouton / télécommande"
+              }
             },
             {
               "value": "input",
-              "label": { "en": "Other sensor (read-only)", "fr": "Autre capteur (lecture seule)" }
+              "label": {
+                "en": "Other sensor (read-only)",
+                "fr": "Autre capteur (lecture seule)"
+              }
             }
           ]
         },
         {
           "key": "reset_after",
           "type": "number",
-          "label": { "en": "Reset to off after (s)", "fr": "Remise à zéro après (s)" },
+          "label": {
+            "en": "Reset to off after (s)",
+            "fr": "Remise à zéro après (s)"
+          },
           "description": {
             "en": "A motion detector reports a detection but often never reports the end of it. Leave empty for the default of the type (60s for motion, 2s for a doorbell), or 0 to keep the state until something else changes it.",
             "fr": "Un détecteur de mouvement signale une détection mais rarement sa fin. Laissez vide pour la valeur par défaut du type (60 s pour un mouvement, 2 s pour une sonnette), ou 0 pour conserver l'état jusqu'à ce qu'autre chose le change."
@@ -212,7 +323,10 @@
     },
     {
       "key": "send_command",
-      "label": { "en": "Send a raw command", "fr": "Envoyer une commande brute" },
+      "label": {
+        "en": "Send a raw command",
+        "fr": "Envoyer une commande brute"
+      },
       "description": {
         "en": "Transmits an RFLink command line. This is how you pair a receiver on an address it has never announced.",
         "fr": "Transmet une ligne de commande RFLink. C'est ainsi que l'on appaire un récepteur sur une adresse qu'il n'a jamais annoncée."
@@ -222,19 +336,28 @@
         {
           "key": "command",
           "type": "string",
-          "label": { "en": "Command", "fr": "Commande" },
+          "label": {
+            "en": "Command",
+            "fr": "Commande"
+          },
           "description": {
             "en": "A single RFLink line starting with 10; — for example 10;NewKaku;00c142;1;ON;",
             "fr": "Une seule ligne RFLink commençant par 10; — par exemple 10;NewKaku;00c142;1;ON;"
           },
-          "placeholder": { "en": "10;NewKaku;00c142;1;ON;", "fr": "10;NewKaku;00c142;1;ON;" },
+          "placeholder": {
+            "en": "10;NewKaku;00c142;1;ON;",
+            "fr": "10;NewKaku;00c142;1;ON;"
+          },
           "required": true
         }
       ]
     },
     {
       "key": "forget_discovered_devices",
-      "label": { "en": "Forget undiscovered devices", "fr": "Oublier les appareils non ajoutés" },
+      "label": {
+        "en": "Forget undiscovered devices",
+        "fr": "Oublier les appareils non ajoutés"
+      },
       "description": {
         "en": "Empties the Discovery tab of everything you have not created. Your existing devices are untouched.",
         "fr": "Vide l'onglet Découverte de tout ce que vous n'avez pas créé. Vos appareils existants ne sont pas touchés."
