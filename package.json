@@ -1,6 +1,6 @@
 {
   "name": "gladys-rflink",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Gladys Assistant external integration for the RFLink 433/868 MHz gateway.",
   "type": "module",
