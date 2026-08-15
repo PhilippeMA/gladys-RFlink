@@ -1,0 +1,109 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  DEVICE_FEATURE_CATEGORIES as CATEGORIES,
+  DEVICE_FEATURE_TYPES as TYPES,
+} from '@gladysassistant/integration-sdk';
+
+import {
+  controllableLabel,
+  fieldDescriptor,
+  levelToPercent,
+  normalizeMeasurements,
+  percentToLevel,
+  RFLINK_FIELDS,
+  supportedLabels,
+} from '../src/devices/featureMap.js';
+
+test('every field entry is complete enough to build a Gladys feature', () => {
+  for (const [label, descriptor] of Object.entries(RFLINK_FIELDS)) {
+    assert.ok(descriptor.key, `${label} needs a feature key`);
+    assert.ok(descriptor.name, `${label} needs a name`);
+    assert.ok(descriptor.category, `${label} needs a category`);
+    assert.ok(descriptor.type, `${label} needs a type`);
+    assert.equal(typeof descriptor.decode, 'function', `${label} needs a decoder`);
+  }
+});
+
+test('feature keys are unique, so two fields never share a history', () => {
+  const keys = Object.values(RFLINK_FIELDS).map((descriptor) => descriptor.key);
+  assert.equal(new Set(keys).size, keys.length);
+});
+
+test('decodes the common sensor fields with the right radix and scale', () => {
+  assert.equal(RFLINK_FIELDS.TEMP.decode('00b4'), 18);
+  assert.equal(RFLINK_FIELDS.HUM.decode('44'), 44);
+  assert.equal(RFLINK_FIELDS.BARO.decode('03f2'), 1010);
+  assert.equal(RFLINK_FIELDS.RAIN.decode('0044'), 6.8);
+  assert.equal(RFLINK_FIELDS.WINSP.decode('0032'), 5);
+  assert.equal(RFLINK_FIELDS.WATT.decode('0064'), 100);
+});
+
+test('an unreadable field decodes to null instead of NaN', () => {
+  assert.equal(RFLINK_FIELDS.HUM.decode('??'), null);
+  assert.equal(RFLINK_FIELDS.TEMP.decode(''), null);
+  assert.equal(RFLINK_FIELDS.CMD.decode('SET_LEVEL=13'), null);
+});
+
+test('ON/OFF and ALLON/ALLOFF both drive the switch feature', () => {
+  assert.equal(RFLINK_FIELDS.CMD.decode('ON'), 1);
+  assert.equal(RFLINK_FIELDS.CMD.decode('off'), 0);
+  assert.equal(RFLINK_FIELDS.CMD.decode('ALLON'), 1);
+  assert.equal(RFLINK_FIELDS.CMD.decode('ALLOFF'), 0);
+});
+
+test('the battery mapping is inverted: Gladys BATTERY_LOW is true when flat', () => {
+  assert.equal(RFLINK_FIELDS.BAT.decode('OK'), 0);
+  assert.equal(RFLINK_FIELDS.BAT.decode('LOW'), 1);
+});
+
+test('wind direction becomes degrees, not one of the 16 raw sectors', () => {
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('0'), 0);
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('4'), 90);
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('8'), 180);
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('15'), 338);
+});
+
+test('dim levels and percentages convert both ways', () => {
+  assert.equal(levelToPercent(0), 0);
+  assert.equal(levelToPercent(15), 100);
+  assert.equal(percentToLevel(0), 0);
+  assert.equal(percentToLevel(100), 15);
+  assert.equal(percentToLevel(50), 8);
+  // Out-of-range input is clamped rather than transmitted as-is.
+  assert.equal(percentToLevel(300), 15);
+  assert.equal(levelToPercent(99), 100);
+});
+
+test('a dimmable device gets a LIGHT on/off, a plain one gets a SWITCH', () => {
+  const dimmable = fieldDescriptor('CMD', ['CMD', 'SET_LEVEL']);
+  assert.equal(dimmable.category, CATEGORIES.LIGHT);
+  assert.equal(dimmable.type, TYPES.LIGHT.BINARY);
+
+  const plain = fieldDescriptor('CMD', ['CMD']);
+  assert.equal(plain.category, CATEGORIES.SWITCH);
+  assert.equal(plain.type, TYPES.SWITCH.BINARY);
+
+  // Same feature key in both variants: turning a switch into a light must not
+  // orphan the history of the feature the user already created.
+  assert.equal(dimmable.key, plain.key);
+});
+
+test('unfolds the dim level RFLink nests inside CMD', () => {
+  assert.deepEqual(normalizeMeasurements({ CMD: 'SET_LEVEL=13' }), { SET_LEVEL: '13' });
+  assert.deepEqual(normalizeMeasurements({ CMD: 'ON' }), { CMD: 'ON' });
+  assert.deepEqual(normalizeMeasurements(), {});
+});
+
+test('only the labels the integration knows about become features', () => {
+  assert.deepEqual(supportedLabels({ TEMP: '00b4', HUM: '44', RFDEBUG: 'ON' }), ['TEMP', 'HUM']);
+  assert.deepEqual(supportedLabels({}), []);
+});
+
+test('a Gladys command maps back to exactly one RFLink label', () => {
+  assert.equal(controllableLabel(RFLINK_FIELDS.CMD.key), 'CMD');
+  assert.equal(controllableLabel(RFLINK_FIELDS.SET_LEVEL.key), 'SET_LEVEL');
+  // A sensor feature is not commandable, whatever Gladys sends.
+  assert.equal(controllableLabel(RFLINK_FIELDS.TEMP.key), null);
+  assert.equal(controllableLabel('nope'), null);
+});

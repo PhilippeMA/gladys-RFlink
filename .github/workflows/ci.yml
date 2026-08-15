@@ -1,0 +1,45 @@
+# -----------------------------------------------------------------------------
+# Continuous integration: runs on every push and every pull request.
+#
+# Three gates, the same ones every developer inspired by this template should
+# keep:
+#   1. Prettier  -> consistent formatting (no style debates in reviews);
+#   2. ESLint    -> catch real mistakes (undefined vars, dead code, ...);
+#   3. Tests     -> `node --test`, the built-in runner (no extra dependency).
+#
+# Runs on Node 24, the version the Docker image ships with (see the Dockerfile),
+# so the check exercises the exact runtime the integration runs on.
+# -----------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    name: Lint & test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test

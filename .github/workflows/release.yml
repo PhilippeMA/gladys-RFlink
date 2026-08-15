@@ -1,0 +1,103 @@
+# -----------------------------------------------------------------------------
+# Cut a new release — entirely from the GitHub UI, no local tooling needed.
+#
+# In GitHub: Actions -> Release -> "Run workflow" -> pick patch / minor / major.
+#
+# What it does, in one run:
+#   1. computes the next semver from `package.json` (npm version rules);
+#   2. writes it into `package.json`, `package-lock.json` AND the manifest
+#      (`gladys-assistant-integration.json`: both `version` and the
+#      `docker_image` tag, so the indexer and the image stay in lockstep);
+#   3. commits the bump and pushes the `vX.Y.Z` tag;
+#   4. calls build.yml to publish the multi-arch image (`:X.Y.Z` + `:latest`).
+#
+# Why call build.yml instead of relying on the tag push: a tag pushed with the
+# default GITHUB_TOKEN does NOT trigger other workflows, so we invoke the build
+# ourselves. No personal access token to create.
+# -----------------------------------------------------------------------------
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: 'Version bump for this release'
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit the version bump and push the tag
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Bump version and update the manifest
+        id: bump
+        env:
+          RELEASE_TYPE: ${{ inputs.release-type }}
+        run: |
+          set -euo pipefail
+
+          # npm computes the next semver and writes it to package.json (and
+          # package-lock.json). --no-git-tag-version: we own the commit + tag
+          # below, so npm must not touch git.
+          new_version="$(npm version "$RELEASE_TYPE" --no-git-tag-version | tail -n1)"
+          new_version="${new_version#v}" # v1.2.0 -> 1.2.0
+
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${new_version}"
+
+          # Keep the manifest in lockstep: the version the indexer reads AND the
+          # image tag Gladys pulls must both point at this release.
+          tmp="$(mktemp)"
+          jq --arg version "$new_version" --arg image "$image" \
+            '.version = $version | .docker_image = $image' \
+            gladys-assistant-integration.json > "$tmp"
+          mv "$tmp" gladys-assistant-integration.json
+
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+
+      # Note: if the branch you release from is protected against direct pushes,
+      # GitHub rejects the push below (the default GITHUB_TOKEN cannot bypass
+      # branch protection). Allow GitHub Actions to bypass the rule, or release
+      # from an unprotected branch.
+      - name: Commit, tag and push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json gladys-assistant-integration.json
+          git commit -m "chore(release): ${VERSION}"
+          git tag -a "v${VERSION}" -m "Release ${VERSION}"
+
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "v${VERSION}"
+
+  # Build and publish the image for the version we just tagged.
+  build:
+    needs: prepare
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      version: ${{ needs.prepare.outputs.version }}
