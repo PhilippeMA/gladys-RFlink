@@ -79,6 +79,30 @@ test('the per-device delay wins, and 0 disables the reset', () => {
   assert.equal(pulseSecondsFor({ role: 'motion', resetAfter: -5 }), 60);
 });
 
+test('the roles stay on category/type pairs Gladys knows how to render', () => {
+  // Same contract as CATEGORY_TYPE_CONTRACT in featureMap.test.js: a pair
+  // Gladys does not register loses its icon and its label, however correct the
+  // value is. Adding a role means checking the new pair against
+  // `front/src/utils/consts.js` in GladysAssistant/Gladys.
+  const used = [
+    ...new Set(Object.values(DEVICE_ROLES).map((s) => `${s.category}|${s.type}`)),
+  ].sort();
+  assert.deepEqual(used, [
+    'button|click',
+    'doorbell|ring',
+    'input|binary',
+    'leak-sensor|binary',
+    'light|binary',
+    'motion-sensor|binary',
+    'opening-sensor|binary',
+    'presence-sensor|binary',
+    'siren|binary',
+    'smoke-sensor|binary',
+    'switch|binary',
+    'vibration-sensor|binary',
+  ]);
+});
+
 test('roleKeys lists exactly the catalog', () => {
   assert.deepEqual(roleKeys(), Object.keys(DEVICE_ROLES));
   assert.ok(roleKeys().includes('motion'));

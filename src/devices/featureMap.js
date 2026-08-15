@@ -129,7 +129,13 @@ export const RFLINK_FIELDS = {
     key: 'humidity',
     name: 'Humidity',
     category: CATEGORIES.HUMIDITY_SENSOR,
-    type: TYPES.SENSOR.INTEGER,
+    // DECIMAL even though RFLink only ever sends whole percents: Gladys
+    // resolves a feature's icon and its translated label by the exact
+    // (category, type) pair, and `humidity-sensor` is only registered with
+    // `decimal`. With `integer` the value still arrives, but the droplet icon
+    // falls back to a generic slider and the label to the raw feature name.
+    // See CATEGORY_TYPE_CONTRACT in test/featureMap.test.js.
+    type: TYPES.SENSOR.DECIMAL,
     unit: UNITS.PERCENT,
     min: 0,
     max: 100,
@@ -378,7 +384,8 @@ export const RFLINK_FIELDS = {
     key: 'distance',
     name: 'Distance',
     category: CATEGORIES.DISTANCE_SENSOR,
-    type: TYPES.SENSOR.INTEGER,
+    // Same reason as HUM: `distance-sensor` is only registered with `decimal`.
+    type: TYPES.SENSOR.DECIMAL,
     unit: UNITS.CM,
     min: 0,
     max: 10_000,

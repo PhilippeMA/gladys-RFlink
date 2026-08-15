@@ -112,6 +112,60 @@ test('the derived fields get no feature at all', () => {
   assert.deepEqual(supportedLabels({ HUM: '37', HSTATUS: '2', BFORECAST: '3' }), ['HUM']);
 });
 
+// Every (category, type) pair this integration can publish.
+//
+// Gladys resolves BOTH a feature's icon and its translated label by the exact
+// pair — `DeviceFeatureCategoriesIcon[category][type]` in the front, falling
+// back to a generic slider, and `deviceFeatureCategory.<category>.<type>` in
+// the translations, falling back to the raw feature name. A pair Gladys does
+// not register therefore renders as a nameless, iconless line even though the
+// value arrives perfectly: that is exactly how `humidity-sensor|integer`
+// shipped, when `humidity-sensor` is only registered with `decimal`.
+//
+// Nothing in this repository can check the pairs against a running Gladys, so
+// they are pinned here instead: adding a field must be a deliberate edit to
+// this list, verified against `front/src/utils/consts.js` and
+// `front/src/config/i18n/en.json` in GladysAssistant/Gladys.
+const CATEGORY_TYPE_CONTRACT = [
+  'angle-sensor|integer',
+  'battery-low|binary',
+  'co2-sensor|integer',
+  'counter-sensor|integer',
+  'distance-sensor|decimal',
+  'doorbell|ring',
+  'energy-sensor|current',
+  'energy-sensor|energy',
+  'energy-sensor|power',
+  'energy-sensor|voltage',
+  'humidity-sensor|decimal',
+  'light-sensor|integer',
+  'light|brightness',
+  'motion-sensor|binary',
+  'noise-sensor|integer',
+  'precipitation-sensor|decimal',
+  'pressure-sensor|integer',
+  'smoke-sensor|binary',
+  'speed-sensor|decimal',
+  'switch|binary',
+  'temperature-sensor|decimal',
+  'uv-sensor|integer',
+];
+
+test('the category/type pairs stay the ones Gladys knows how to render', () => {
+  const used = [
+    ...new Set(Object.values(RFLINK_FIELDS).map((d) => `${d.category}|${d.type}`)),
+  ].sort();
+  assert.deepEqual(used, CATEGORY_TYPE_CONTRACT);
+});
+
+test('a percentage sensor is decimal, whatever the wire sends', () => {
+  // RFLink only sends whole percents, but `humidity-sensor` exists in Gladys
+  // as `decimal` alone: typing it `integer` costs the droplet icon and the
+  // label, for no gain.
+  assert.equal(RFLINK_FIELDS.HUM.type, TYPES.SENSOR.DECIMAL);
+  assert.equal(RFLINK_FIELDS.HUM.decode('37'), 37);
+});
+
 test('no feature is left in the unknown category', () => {
   // A feature Gladys cannot name is a feature the user sees blank.
   for (const [label, descriptor] of Object.entries(RFLINK_FIELDS)) {

@@ -83,10 +83,20 @@ ESP8266/ESP32 (native TCP server) and a USB RFLink bridged with `ser2net`.
 
 Add one entry to `RFLINK_FIELDS` in
 [`src/devices/featureMap.js`](src/devices/featureMap.js) — the Gladys
-category/type/unit and a decoder — and nothing else changes. Watch the radix:
-the RFLink protocol reference documents some fields as hexadecimal and the
-others as decimal, and getting it backwards produces a temperature of 180
-instead of 18.0.
+category/type/unit and a decoder — and nothing else changes. Two traps:
+
+- **The radix.** The RFLink protocol reference documents some fields as
+  hexadecimal and the others as decimal; getting it backwards produces a
+  temperature of 180 instead of 18.0.
+- **The (category, type) pair.** Gladys resolves a feature's icon _and_ its
+  translated label by the exact pair, falling back to a generic slider and to
+  the raw feature name. A pair Gladys does not register renders as a nameless,
+  iconless line even though the value arrives perfectly — `humidity-sensor`
+  exists only as `decimal`, never `integer`. The pairs in use are pinned by
+  `CATEGORY_TYPE_CONTRACT` in [`test/featureMap.test.js`](test/featureMap.test.js);
+  check a new one against `front/src/utils/consts.js` and
+  `front/src/config/i18n/en.json` in
+  [GladysAssistant/Gladys](https://github.com/GladysAssistant/Gladys).
 
 ## Development
 
