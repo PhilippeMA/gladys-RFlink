@@ -35,6 +35,17 @@ export const INBOUND_PREFIX = '20';
 /** Prefix of every line sent TO the gateway. */
 export const OUTBOUND_PREFIX = '10';
 
+/**
+ * Prefix of the ECHO command (node 11).
+ *
+ * RFLink replays the payload back on the link "as if a remote control button
+ * was pressed" — the protocol reference documents it for exactly the case
+ * where the original remote is broken, lost, or where the gateway was paired
+ * with a receiver whose address was therefore never heard on the air. It is
+ * how a device gets declared without waiting for it to transmit.
+ */
+export const ECHO_PREFIX = '11';
+
 /** Ready-made gateway commands (they address the gateway, not an RF device). */
 export const GATEWAY_COMMANDS = {
   PING: '10;PING;',
@@ -159,7 +170,41 @@ export function parseFrame(rawLine) {
 export function buildDeviceCommand({ protocol, id, unit }, command) {
   // RFLink always expects the 4 positional fields; devices without a unit take
   // `0`, which the firmware accepts as "no sub-address".
-  return `${OUTBOUND_PREFIX};${protocol};${id};${unit ?? '0'};${command};`;
+  return `${OUTBOUND_PREFIX};${protocol};${id};${commandUnit(protocol, unit)};${command};`;
+}
+
+/**
+ * Build the ECHO line that declares a device RFLink has never heard.
+ *
+ * The reference documents the shape as `11;` followed by the data to replay:
+ * `11;20;0B;NewKaku;ID=000005;SWITCH=2;CMD=ON;`. The gateway answers `OK` and
+ * then re-emits the payload with a counter of its own, so it travels the
+ * normal reception path and the device is learned like any other.
+ * @param {object} target - `{ protocol, id, unit }` of the device to declare.
+ * @param {string} command - The command to replay, e.g. 'OFF' or 'STOP'.
+ * @returns {string} The echo line, without its terminator.
+ */
+export function buildEchoCommand({ protocol, id, unit }, command) {
+  const suffix = unit === null || unit === undefined ? '' : `SWITCH=${unit};`;
+  return `${ECHO_PREFIX};${INBOUND_PREFIX};00;${protocol};ID=${id};${suffix}CMD=${command};`;
+}
+
+/**
+ * The value of the field between the id and the command.
+ *
+ * For most protocols it is the button/unit number. For RTS the reference is
+ * explicit — "10;RTS;1a602a;0;ON; => RTS protocol, address, command (zero is
+ * unused for now)" — so the `SWITCH=` a Somfy remote reports is part of the
+ * device identity but must NOT be echoed back into the command.
+ * @param {string} protocol - RFLink protocol name.
+ * @param {string|null} unit - Unit reported by the gateway.
+ * @returns {string} The field value to transmit.
+ */
+function commandUnit(protocol, unit) {
+  if (String(protocol).toUpperCase() === 'RTS') {
+    return '0';
+  }
+  return unit ?? '0';
 }
 
 /**
@@ -171,7 +216,7 @@ export function buildDeviceCommand({ protocol, id, unit }, command) {
  * reviewed.
  * @param {string} line - Candidate command line.
  * @returns {string} The trimmed line, guaranteed to be a single command.
- * @throws {Error} When the line is empty, too long, multi-line or not a `10;` command.
+ * @throws {Error} When the line is empty, too long, multi-line or not a command.
  */
 export function assertSafeCommand(line) {
   const command = String(line ?? '').trim();
@@ -184,8 +229,12 @@ export function assertSafeCommand(line) {
   if (command.length > MAX_COMMAND_LENGTH) {
     throw new Error(`A command must be at most ${MAX_COMMAND_LENGTH} characters`);
   }
-  if (!command.startsWith(`${OUTBOUND_PREFIX};`)) {
-    throw new Error('An RFLink command must start with "10;"');
+  // `10;` addresses the gateway or an RF device; `11;` is the ECHO node, which
+  // declares a device without waiting for it to transmit. Nothing else may be
+  // written on the link.
+  const prefix = command.slice(0, command.indexOf(';'));
+  if (prefix !== OUTBOUND_PREFIX && prefix !== ECHO_PREFIX) {
+    throw new Error('An RFLink command must start with "10;" or "11;"');
   }
   return command;
 }

@@ -402,11 +402,10 @@ test('the Gladys cover buttons become UP, DOWN and STOP on the air', async () =>
   await pipeline.handleSetValue(device, feature, -1);
   await pipeline.handleSetValue(device, feature, 0);
 
-  assert.deepEqual(sent, [
-    '10;RTS;f1e260;01;UP;',
-    '10;RTS;f1e260;01;DOWN;',
-    '10;RTS;f1e260;01;STOP;',
-  ]);
+  // The middle field is the SWITCH for most protocols, but the reference is
+  // explicit that RTS leaves it unused — so it goes out as zero even though
+  // `SWITCH=01` is part of the device identity.
+  assert.deepEqual(sent, ['10;RTS;f1e260;0;UP;', '10;RTS;f1e260;0;DOWN;', '10;RTS;f1e260;0;STOP;']);
 });
 
 test('a value outside the cover vocabulary is refused, not sent as ON', async () => {

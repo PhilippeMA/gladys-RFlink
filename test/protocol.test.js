@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   assertSafeCommand,
   buildDeviceCommand,
+  buildEchoCommand,
   FRAME_KINDS,
   parseDecimal,
   parseFrame,
@@ -86,10 +87,53 @@ test('builds the four positional fields of a device command', () => {
   );
 });
 
-test('a raw command is accepted only as a single 10; line', () => {
+test('the RTS command field between the id and the action is always zero', () => {
+  // "10;RTS;1a602a;0;ON; => RTS protocol, address, command (zero is unused for
+  // now)": the SWITCH a Somfy remote reports identifies the device but must not
+  // be echoed back into the command.
+  assert.equal(
+    buildDeviceCommand({ protocol: 'RTS', id: '26d460', unit: '01' }, 'DOWN'),
+    '10;RTS;26d460;0;DOWN;',
+  );
+  // Every other protocol keeps its unit.
+  assert.equal(
+    buildDeviceCommand({ protocol: 'NewKaku', id: '00c142', unit: '1' }, 'ON'),
+    '10;NewKaku;00c142;1;ON;',
+  );
+});
+
+test('the echo node declares a device the gateway has never heard', () => {
+  // `11;` replays the payload as if a remote had been pressed, which is how a
+  // hand-paired receiver — an address only ever transmitted to — gets learned.
+  assert.equal(
+    buildEchoCommand({ protocol: 'RTS', id: 'a00001', unit: '0' }, 'STOP'),
+    '11;20;00;RTS;ID=a00001;SWITCH=0;CMD=STOP;',
+  );
+  // A device with no unit carries no SWITCH field at all.
+  assert.equal(
+    buildEchoCommand({ protocol: 'Oregon TempHygro', id: '0710', unit: null }, 'OFF'),
+    '11;20;00;Oregon TempHygro;ID=0710;CMD=OFF;',
+  );
+});
+
+test('what the echo builds is a frame the parser reads back', () => {
+  // The whole point: the replayed line travels the ordinary reception path.
+  const echo = buildEchoCommand({ protocol: 'RTS', id: 'a00001', unit: '0' }, 'STOP');
+  const replayed = parseFrame(echo.slice(echo.indexOf(';') + 1));
+  assert.equal(replayed.kind, FRAME_KINDS.DEVICE);
+  assert.equal(replayed.protocol, 'RTS');
+  assert.equal(replayed.id, 'a00001');
+  assert.deepEqual(replayed.values, { CMD: 'STOP' });
+});
+
+test('a raw command is accepted only as a single 10; or 11; line', () => {
   assert.equal(assertSafeCommand('  10;PING;  '), '10;PING;');
+  assert.equal(
+    assertSafeCommand('11;20;00;RTS;ID=a00001;CMD=STOP;'),
+    '11;20;00;RTS;ID=a00001;CMD=STOP;',
+  );
   assert.throws(() => assertSafeCommand(''), /Empty command/);
-  assert.throws(() => assertSafeCommand('20;06;OK;'), /must start with "10;"/);
+  assert.throws(() => assertSafeCommand('20;06;OK;'), /must start with "10;" or "11;"/);
   // The important one: a newline would inject a second, unreviewed command.
   assert.throws(() => assertSafeCommand('10;PING;\n10;REBOOT;'), /single line/);
   assert.throws(() => assertSafeCommand(`10;${'X'.repeat(200)};`), /at most/);

@@ -361,6 +361,101 @@
       ]
     },
     {
+      "key": "declare_device",
+      "label": {
+        "en": "Declare a known device",
+        "fr": "Déclarer un appareil connu"
+      },
+      "description": {
+        "en": "For a device the gateway only ever transmits to, and has therefore never heard: a shutter or a plug you paired by hand. RFLink replays it so it appears in Discovery.",
+        "fr": "Pour un appareil auquel la passerelle ne fait qu'émettre, et qu'elle n'a donc jamais entendu : un volet ou une prise que vous avez appairés à la main. RFLink le rejoue pour qu'il apparaisse dans la Découverte."
+      },
+      "timeout_seconds": 20,
+      "fields": [
+        {
+          "key": "protocol",
+          "type": "string",
+          "label": {
+            "en": "Protocol",
+            "fr": "Protocole"
+          },
+          "description": {
+            "en": "The RFLink protocol name, exactly as the gateway spells it.",
+            "fr": "Le nom du protocole RFLink, exactement comme la passerelle l'écrit."
+          },
+          "placeholder": {
+            "en": "RTS",
+            "fr": "RTS"
+          },
+          "required": true
+        },
+        {
+          "key": "id",
+          "type": "string",
+          "label": {
+            "en": "Address",
+            "fr": "Adresse"
+          },
+          "description": {
+            "en": "Hexadecimal address of the device — for a shutter, the one you paired the gateway with.",
+            "fr": "Adresse hexadécimale de l'appareil — pour un volet, celle avec laquelle vous avez appairé la passerelle."
+          },
+          "placeholder": {
+            "en": "a00001",
+            "fr": "a00001"
+          },
+          "required": true
+        },
+        {
+          "key": "unit",
+          "type": "string",
+          "label": {
+            "en": "Unit",
+            "fr": "Unité"
+          },
+          "description": {
+            "en": "Button or channel number. Leave empty if the device has none.",
+            "fr": "Numéro de bouton ou de canal. Laissez vide si l'appareil n'en a pas."
+          },
+          "placeholder": {
+            "en": "0",
+            "fr": "0"
+          },
+          "required": false
+        },
+        {
+          "key": "command",
+          "type": "select",
+          "label": {
+            "en": "This device is driven by",
+            "fr": "Cet appareil se pilote par"
+          },
+          "description": {
+            "en": "Pick UP / DOWN / STOP for a shutter, ON / OFF for a switch: it also sets the device type.",
+            "fr": "Choisissez UP / DOWN / STOP pour un volet, ON / OFF pour un interrupteur : cela fixe aussi le type de l'appareil."
+          },
+          "required": true,
+          "default": "OFF",
+          "options": [
+            {
+              "value": "OFF",
+              "label": {
+                "en": "On / Off (switch, plug, light)",
+                "fr": "Marche / Arrêt (interrupteur, prise, lampe)"
+              }
+            },
+            {
+              "value": "STOP",
+              "label": {
+                "en": "Up / Down / Stop (shutter, curtain)",
+                "fr": "Montée / Descente / Stop (volet, rideau)"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "key": "forget_discovered_devices",
       "label": {
         "en": "Forget undiscovered devices",

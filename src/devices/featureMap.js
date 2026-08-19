@@ -200,6 +200,12 @@ export const RFLINK_FIELDS = {
     unit: UNITS.KILOMETER_PER_HOUR,
     min: 0,
     max: 300,
+    // The reference text says "hexadecimal" WITHOUT the "needs division by 10"
+    // it attaches to WINSP and AWINSP — but its own sample contradicts it:
+    //   20;47;Cresta;ID=8001;WINDIR=0002;WINSP=0060;WINGS=0088;
+    // 0x60 = 96 -> 9.6 km/h of wind, and 0x88 = 136 would be a 136 km/h gust.
+    // A gust fourteen times the wind is not weather; 13.6 km/h is. The
+    // documentation is incomplete here, so the division stays.
     decode: hexTenth,
   },
   WINDIR: {
@@ -210,10 +216,22 @@ export const RFLINK_FIELDS = {
     unit: UNITS.DEGREE,
     min: 0,
     max: 359,
-    // RFLink reports one of 16 compass sectors; Gladys wants degrees.
+    // The reference says "integer value from 0-15" reflecting 22.5 degree
+    // steps, but writes the value hexadecimally like every other measurement
+    // (`WINDIR=0005`, and `WINDIR=5A` in the UPM/Esic sample). Read it as hex:
+    // it is identical for a real sector, and it stops silently dropping the
+    // frames a decimal-only reader cannot parse.
     decode: (raw) => {
-      const sector = parseDecimal(raw);
-      return sector === null ? null : Math.round(sector * DEGREES_PER_WIND_SECTOR) % 360;
+      const sector = parseHex(raw);
+      if (sector === null) {
+        return null;
+      }
+      if (sector > 15) {
+        // Out of the documented range: refuse rather than invent a bearing.
+        // Surfacing it is how the real meaning gets reported and fixed.
+        return null;
+      }
+      return Math.round(sector * DEGREES_PER_WIND_SECTOR) % 360;
     },
   },
   WINCHL: {

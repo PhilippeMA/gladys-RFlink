@@ -51,9 +51,13 @@ export function commandFor(entry, featureKey, value) {
       // back to ON.
       return roleCommand === undefined ? (Number(value) === 0 ? 'OFF' : 'ON') : roleCommand;
     }
-    case 'SET_LEVEL':
-      // RFLink dimmers take the level (0-15) as the command word itself.
-      return String(percentToLevel(Number(value)));
+    case 'SET_LEVEL': {
+      // RFLink dimmers take the level as the command word itself, and the
+      // reference documents the transmit range as "1 to 15" — 0 is not a dim
+      // level. A brightness of zero is the user switching the light off.
+      const level = percentToLevel(Number(value));
+      return level === 0 ? 'OFF' : String(level);
+    }
     default:
       return null;
   }

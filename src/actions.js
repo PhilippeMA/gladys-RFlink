@@ -14,6 +14,7 @@ import { createLogger } from '@gladysassistant/integration-sdk';
 import {
   assertSafeCommand,
   buildDeviceCommand,
+  buildEchoCommand,
   FRAME_KINDS,
   GATEWAY_COMMANDS,
 } from './rflink/protocol.js';
@@ -30,6 +31,10 @@ const ANSWER_TIMEOUT_MS = 8_000;
 const IDENTIFY_BLINK_MS = 2_000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Commands the declare action may replay. UP / DOWN / STOP additionally tell
+// the registry the device is a cover, so a shutter is born correctly typed.
+const DECLARABLE_COMMANDS = ['OFF', 'ON', 'STOP', 'UP', 'DOWN'];
 
 /**
  * Build the action handlers.
@@ -77,11 +82,20 @@ export function createActions({ gladys, getGateway, registry, publishDevices }) 
     async gateway_version() {
       const gateway = requireGateway();
       logger.info('Action gateway_version -> 10;VERSION;');
+      // Firmwares answer `VER=1.1;REV=48;BUILD=07;`, but the protocol
+      // reference documents the reply as free text. Accept either, and show
+      // whatever the gateway actually said rather than timing out on a format.
       const frame = await gateway.request(
         GATEWAY_COMMANDS.VERSION,
-        (frame) => frame.kind === FRAME_KINDS.VERSION,
+        (frame) => frame.kind === FRAME_KINDS.VERSION || frame.kind === FRAME_KINDS.STATUS,
         ANSWER_TIMEOUT_MS,
       );
+      if (frame.kind === FRAME_KINDS.STATUS) {
+        return {
+          en: `RFLink answered: ${frame.message}`,
+          fr: `RFLink a répondu : ${frame.message}`,
+        };
+      }
       const { VER: version = '?', REV: revision = '?', BUILD: build = '?' } = frame.values;
       return {
         en: `RFLink firmware ${version}, revision ${revision}, build ${build}.`,
@@ -189,6 +203,76 @@ export function createActions({ gladys, getGateway, registry, publishDevices }) 
       return {
         en: `${defaultName(updated)} is now a "${role}" (${reset.en}). Open the Discovery tab and press Update on this device to apply it.`,
         fr: `${defaultName(updated)} est maintenant de type « ${role} » (${reset.fr}). Ouvrez l'onglet Découverte et cliquez sur Mettre à jour pour l'appliquer.`,
+      };
+    },
+
+    /**
+     * Declare a device RFLink has never heard.
+     *
+     * The registry is built by LISTENING, which leaves one case uncovered: an
+     * address the gateway only ever TRANSMITS on. That is every receiver
+     * paired by hand — a Somfy RTS shutter, a NewKaku plug — and the case the
+     * protocol reference calls "the original remote control is not available
+     * anymore (broken/lost/etc.)".
+     *
+     * RFLink solves it itself with the ECHO node: it replays the payload back
+     * on the link as if a remote had been pressed, so the device travels the
+     * ordinary reception path and is learned like any other. No parallel
+     * creation path to keep in sync with the real one.
+     */
+    async declare_device(fields) {
+      const gateway = requireGateway();
+      const protocol = String(fields.protocol ?? '').trim();
+      const id = String(fields.id ?? '')
+        .trim()
+        .toLowerCase();
+      const unit = String(fields.unit ?? '').trim();
+      const command = String(fields.command ?? 'OFF')
+        .trim()
+        .toUpperCase();
+
+      if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{1,19}$/.test(protocol)) {
+        throw new Error(`"${protocol}" is not an RFLink protocol name (e.g. RTS, NewKaku).`);
+      }
+      if (!/^[0-9a-f]{1,10}$/.test(id)) {
+        throw new Error(`"${fields.id}" is not a device address (1 to 10 hexadecimal digits).`);
+      }
+      if (unit !== '' && !/^[0-9a-zA-Z]{1,4}$/.test(unit)) {
+        throw new Error(`"${unit}" is not a unit number.`);
+      }
+      if (!DECLARABLE_COMMANDS.includes(command)) {
+        throw new Error(`Unsupported command "${command}".`);
+      }
+
+      const target = { protocol, id, unit: unit === '' ? null : unit };
+      const line = assertSafeCommand(buildEchoCommand(target, command));
+      logger.info(`Action declare_device -> ${line}`);
+
+      let echoed;
+      try {
+        echoed = await gateway.request(
+          line,
+          (frame) => frame.kind === FRAME_KINDS.DEVICE && String(frame.id).toLowerCase() === id,
+          ANSWER_TIMEOUT_MS,
+        );
+      } catch {
+        throw new Error(
+          'The gateway did not replay the device. The echo node needs a recent RFLink' +
+            ' firmware — check it with "Read the firmware version".',
+        );
+      }
+
+      // Force the learning: the user asked for this device explicitly, so the
+      // automatic-discovery switch must not veto it.
+      const { entry } = registry.learn(echoed, { autoDiscover: true });
+      if (!entry) {
+        throw new Error('The gateway replayed the device but it carried nothing usable.');
+      }
+      await publishDevices();
+
+      return {
+        en: `${defaultName(entry)} declared. Add it from the Discovery tab.`,
+        fr: `${defaultName(entry)} déclaré. Ajoutez-le depuis l'onglet Découverte.`,
       };
     },
 

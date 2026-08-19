@@ -59,10 +59,15 @@ test('the battery mapping is inverted: Gladys BATTERY_LOW is true when flat', ()
 });
 
 test('wind direction becomes degrees, not one of the 16 raw sectors', () => {
+  // The reference documents sectors 0-15 but writes them hexadecimally, like
+  // every other measurement: `WINDIR=0005` in its own samples.
   assert.equal(RFLINK_FIELDS.WINDIR.decode('0'), 0);
-  assert.equal(RFLINK_FIELDS.WINDIR.decode('4'), 90);
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('0004'), 90);
   assert.equal(RFLINK_FIELDS.WINDIR.decode('8'), 180);
-  assert.equal(RFLINK_FIELDS.WINDIR.decode('15'), 338);
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('000f'), 338);
+  // Out of the documented range (the UPM/Esic sample sends `WINDIR=5A`):
+  // refused rather than turned into an invented bearing.
+  assert.equal(RFLINK_FIELDS.WINDIR.decode('5A'), null);
 });
 
 test('dim levels and percentages convert both ways', () => {

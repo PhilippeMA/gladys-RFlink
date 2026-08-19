@@ -74,6 +74,11 @@ ESP8266/ESP32 (native TCP server) and a USB RFLink bridged with `ser2net`.
   the feature key so the history survives, and brings the automatic reset a
   detector needs: a PIR that never sends OFF would otherwise stay "on" for
   ever, and no scene could trigger again.
+- **A device the gateway only transmits to can still be declared.** Listening
+  leaves one gap: an address hand-paired into a receiver is never heard. RFLink
+  covers it itself with the ECHO node (`11;`), which replays a payload as if a
+  remote had been pressed — so the declared device travels the ordinary
+  reception path instead of a parallel creation path.
 - **A newly added device is never blank.** The last reading heard before the
   user added it is replayed on `onDeviceCreated`, timestamped when it was
   measured — except for pulsed sensors, where a past detection is an event, not
@@ -85,9 +90,11 @@ Add one entry to `RFLINK_FIELDS` in
 [`src/devices/featureMap.js`](src/devices/featureMap.js) — the Gladys
 category/type/unit and a decoder — and nothing else changes. Two traps:
 
-- **The radix.** The RFLink protocol reference documents some fields as
-  hexadecimal and the others as decimal; getting it backwards produces a
-  temperature of 180 instead of 18.0.
+- **The radix.** The reference annotates a field "(hexadecimal)" when it is
+  one and says nothing otherwise; getting it backwards produces a temperature
+  of 180 instead of 18.0, and the wrong reading is usually just as plausible as
+  the right one. Nine fields (CHIME, CO2, SOUND, VOLT, CURRENT×3, METER, DIST)
+  carry no annotation at all and are assumed decimal — unconfirmed.
 - **The (category, type) pair.** Gladys resolves a feature's icon _and_ its
   translated label by the exact pair, falling back to a generic slider and to
   the raw feature name. A pair Gladys does not register renders as a nameless,
