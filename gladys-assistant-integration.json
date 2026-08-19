@@ -6,8 +6,8 @@
     "en": "433/868 MHz devices through an RFLink gateway: switches, dimmers, sensors, weather stations.",
     "fr": "Appareils 433/868 MHz via une passerelle RFLink : interrupteurs, variateurs, capteurs, météo."
   },
-  "version": "1.0.2",
-  "docker_image": "ghcr.io/philippema/gladys-rflink:1.0.2",
+  "version": "1.0.3",
+  "docker_image": "ghcr.io/philippema/gladys-rflink:1.0.3",
   "gladys_version": ">=4.86.0",
   "cover_image": "https://raw.githubusercontent.com/PhilippeMA/gladys-RFlink/main/cover.png",
   "categories": ["protocols", "lighting", "environment"],
