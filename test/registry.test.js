@@ -234,6 +234,54 @@ test('resolve falls back to the device params when the /data cache was lost', ()
   assert.equal(registry.resolve('ext:other:thing', [{ external_id: 'ext:other:thing' }]), null);
 });
 
+test('an undecodable field is named once, so it can be reported', () => {
+  // The Oregon Wind sample of the protocol reference: WDIR is undocumented and
+  // its encoding cannot be inferred from two samples, so it is not mapped — but
+  // dropping it in silence is what keeps it undecoded for ever.
+  const warnings = [];
+  const { registry } = createRegistry({
+    logger: { ...silent, warn: (message) => warnings.push(message) },
+  });
+
+  const line = '20;32;Oregon Wind;ID=1a89;WDIR=0045;WINSP=0068;AWINSP=0050;BAT=OK;';
+  learn(registry, line);
+  learn(registry, line);
+  learn(registry, line);
+
+  assert.equal(warnings.length, 1, 'said once, not on every transmission');
+  assert.match(warnings[0], /WDIR=0045/);
+  assert.match(warnings[0], /report/);
+  // The rest of the frame still works.
+  assert.deepEqual(registry.list()[0].labels, ['WINSP', 'AWINSP', 'BAT']);
+});
+
+test('the deliberately dropped fields are never reported as unknown', () => {
+  // HSTATUS and BFORECAST are excluded on purpose, not for lack of knowing:
+  // warning about them would nag every Oregon BTHR owner for ever.
+  const warnings = [];
+  const { registry } = createRegistry({
+    logger: { ...silent, warn: (message) => warnings.push(message) },
+  });
+
+  learn(registry, '20;e5;Oregon BTHR;ID=5a6d;TEMP=00be;HUM=40;BARO=03d7;HSTATUS=2;BFORECAST=3;');
+
+  assert.deepEqual(warnings, []);
+});
+
+test('a rain gauge exposes both of its counters', () => {
+  const { registry } = createRegistry();
+  const { entry, values } = learn(
+    registry,
+    '20;83;Oregon Rain2;ID=2a19;RAIN=002a;RAINTOT=0054;BAT=OK;',
+  );
+
+  assert.deepEqual(registry.buildStates(entry, values), [
+    { device_feature_external_id: 'ext:rflink:oregon-rain2:2a19:rain-total', state: 4.2 },
+    { device_feature_external_id: 'ext:rflink:oregon-rain2:2a19:rain-counter', state: 8.4 },
+    { device_feature_external_id: 'ext:rflink:oregon-rain2:2a19:battery-low', state: 0 },
+  ]);
+});
+
 test('a role is remembered across a restart', async () => {
   const store = createFakeStore();
   const { registry } = createRegistry({ store });

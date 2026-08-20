@@ -162,6 +162,24 @@ export const RFLINK_FIELDS = {
     max: 1000,
     decode: hexTenth,
   },
+  RAINTOT: {
+    key: 'rain-counter',
+    name: 'Rain counter',
+    category: CATEGORIES.PRECIPITATION_SENSOR,
+    type: TYPES.SENSOR.DECIMAL,
+    unit: UNITS.MM,
+    min: 0,
+    max: 100_000,
+    // Not in the reference's field list — only in its samples, next to RAIN:
+    //   20;46;Oregon Rain;ID=2a1d;RAIN=0012;RAINTOT=0012;BAT=OK;
+    //   20;83;Oregon Rain2;ID=2a19;RAIN=002a;RAINTOT=0054;BAT=OK;
+    // Same decoder, same frame, same physical quantity as RAIN, which IS
+    // documented as hexadecimal in tenths of a millimetre — a decoder emitting
+    // one quantity at two scales on a single line would be a surprise. The
+    // scale is therefore inferred, not read: if a real rain gauge ever shows
+    // values ten times off, this is the line to change.
+    decode: hexTenth,
+  },
   RAINRATE: {
     key: 'rain-rate',
     name: 'Rain rate',

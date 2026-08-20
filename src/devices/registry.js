@@ -16,7 +16,12 @@
 
 import { createLogger } from '@gladysassistant/integration-sdk';
 
-import { fieldDescriptor, normalizeMeasurements, supportedLabels } from './featureMap.js';
+import {
+  fieldDescriptor,
+  IGNORED_FIELDS,
+  normalizeMeasurements,
+  supportedLabels,
+} from './featureMap.js';
 import { applyRole, DEFAULT_ROLE, isKnownRole, roleFromFrame } from './roles.js';
 
 const defaultLogger = createLogger({ name: 'registry' });
@@ -28,6 +33,10 @@ export const MAX_DEVICES = 200;
 
 // Storage format version, so a future change can migrate instead of guessing.
 const STORE_VERSION = 1;
+
+// Ceiling on the "unsupported field" reports kept in memory. Past it the point
+// is made and the log stays quiet, whatever the neighbourhood transmits.
+const MAX_REPORTED_UNKNOWN = 200;
 
 /** Param names carried by the created Gladys device. */
 export const PARAMS = {
@@ -101,6 +110,9 @@ export class DeviceRegistry {
     this.maxDevices = maxDevices;
     this.entries = new Map();
     this.warnedFull = false;
+    // Fields seen on the air that this integration cannot decode, already
+    // reported once. See `#reportUnknownFields`.
+    this.reportedUnknown = new Set();
   }
 
   /** Reload the learned devices from disk. */
@@ -159,6 +171,8 @@ export class DeviceRegistry {
     const labels = supportedLabels(values);
     const key = entryKey(target);
     const known = this.entries.get(key);
+
+    this.#reportUnknownFields(key, target, values, labels);
 
     if (!known) {
       if (!autoDiscover) {
@@ -223,6 +237,40 @@ export class DeviceRegistry {
 
     this.save();
     return { entry: known, values, isNew: false, changed: newLabels.length > 0 || retyped };
+  }
+
+  /**
+   * Say once, out loud, that a device reports something we cannot decode.
+   *
+   * Silence here is a trap of its own making: an Oregon wind station whose
+   * `WDIR` is dropped gives the user a device with no direction and no reason
+   * why, so it never gets reported, so it never gets decoded. Naming the field
+   * and its raw value turns a dead end into a bug report — the only way the
+   * remaining undocumented fields will ever be resolved.
+   * @param {string} key - Registry key of the device.
+   * @param {object} target - `{ protocol, id, unit }`.
+   * @param {Record<string, string>} values - Normalized measurements.
+   * @param {string[]} supported - The labels that DID map to a feature.
+   */
+  #reportUnknownFields(key, target, values, supported) {
+    if (this.reportedUnknown.size >= MAX_REPORTED_UNKNOWN) {
+      return;
+    }
+    for (const [label, raw] of Object.entries(values)) {
+      // IGNORED_FIELDS are dropped on purpose, not for lack of knowing.
+      if (supported.includes(label) || IGNORED_FIELDS.includes(label)) {
+        continue;
+      }
+      const seen = `${key}|${label}`;
+      if (this.reportedUnknown.has(seen)) {
+        continue;
+      }
+      this.reportedUnknown.add(seen);
+      this.logger.warn(
+        `${defaultName(target)} reports ${label}=${raw}, which this integration cannot decode` +
+          ' yet. Please report the raw frame so it can be added.',
+      );
+    }
   }
 
   /**
